@@ -261,6 +261,13 @@ create policy "document_types_allow_all_authenticated"
   using (true)
   with check (true);
 
+-- DBs ישנים: `document_types` ללא עמודות שהאפליקציה שולפת
+alter table public.document_types
+  add column if not exists download_link text;
+
+alter table public.document_types
+  add column if not exists blank_form_original_filename text;
+
 -- ---------------------------------------------------------------------------
 -- custom_field_sections + custom_field_definitions (CRM grid, Word {{custom_slug}})
 -- ---------------------------------------------------------------------------

@@ -51,3 +51,7 @@ c:\Users\User\Desktop\Itamar-Core-CRM\SQL_RUN_ORDER.md
 הרץ **פעם אחת** ב־Supabase → SQL (או פתח והדבק):  
 `migrations\add_templates_is_active.sql`  
 (או הדבק: `alter table public.templates add column if not exists is_active boolean not null default true;`)
+
+## שגיאה: `column document_types.download_link does not exist`
+
+הרץ: `migrations\add_document_types_columns.sql` (או שני ה־`alter` שבתוכו).

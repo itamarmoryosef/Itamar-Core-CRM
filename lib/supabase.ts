@@ -1,5 +1,6 @@
 import { createBrowserClient } from "@supabase/ssr";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { normalizeSupabaseProjectUrl } from "@/lib/supabaseUrl";
 
 type BrowserClient = ReturnType<typeof createBrowserClient>;
 let _client: BrowserClient | null = null;
@@ -7,12 +8,14 @@ let _client: BrowserClient | null = null;
 function getOrCreateClient(): BrowserClient {
   if (_client) return _client;
 
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
+  const supabaseUrl = normalizeSupabaseProjectUrl(
+    process.env.NEXT_PUBLIC_SUPABASE_URL
+  );
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim();
 
   if (!supabaseUrl || !supabaseAnonKey) {
     throw new Error(
-      "חסרים NEXT_PUBLIC_SUPABASE_URL ו/או NEXT_PUBLIC_SUPABASE_ANON_KEY. הגדרו ב־.env.local (מקומי) או ב־Vercel → Project → Settings → Environment Variables."
+      "חסרים או שגויים NEXT_PUBLIC_SUPABASE_URL / ANON_KEY. URL חייב להיות בדיוק `https://xxxx.supabase.co` (בלי נתיב או / בסוף). הגדרו ב־.env.local או Vercel."
     );
   }
 

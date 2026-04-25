@@ -55,3 +55,8 @@ c:\Users\User\Desktop\Itamar-Core-CRM\SQL_RUN_ORDER.md
 ## שגיאה: `column document_types.download_link does not exist`
 
 הרץ: `migrations\add_document_types_columns.sql` (או שני ה־`alter` שבתוכו).
+
+## שגיאות: `lead_providers.phone` / `clients.closed_by` / `clients.lead_source`
+
+הרץ **בבת אחת**: `migrations\add_lead_revenue_bootstrap.sql`  
+(או הריצו בנפרד: `add_lead_providers.sql`, `add_client_lead_source.sql`, `add_client_lead_provider_name.sql`, `add_closed_by_and_rep_commission.sql` — **אחרי** ש־`profiles` קיימת).

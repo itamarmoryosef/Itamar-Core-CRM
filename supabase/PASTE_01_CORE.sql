@@ -48,6 +48,61 @@ alter table public.clients
 alter table public.clients
   add column if not exists custom_fields_data jsonb not null default '{}'::jsonb;
 
+-- lead / revenue (מקור ליד, שם ספק — closed_by ב־profiles_team.sql אחרי `profiles`)
+alter table public.clients
+  add column if not exists lead_source text;
+
+alter table public.clients
+  add column if not exists lead_provider_name text;
+
+-- ---------------------------------------------------------------------------
+-- lead_providers (ספקי לידים — הכנסות / דשבורד)
+-- ---------------------------------------------------------------------------
+create table if not exists public.lead_providers (
+  id uuid primary key default gen_random_uuid (),
+  name text not null,
+  phone text,
+  commission_percent numeric(6, 2) not null default 0,
+  created_at timestamptz not null default now(),
+  constraint lead_providers_name_nonempty check (length(trim(name)) > 0),
+  constraint lead_providers_commission_range
+    check (commission_percent >= 0 and commission_percent <= 100)
+);
+
+-- טבלה ישנה בלי עמודות
+alter table public.lead_providers
+  add column if not exists phone text;
+
+alter table public.lead_providers
+  add column if not exists commission_percent numeric(6, 2) not null default 0;
+
+alter table public.lead_providers
+  add column if not exists created_at timestamptz not null default now();
+
+create unique index if not exists lead_providers_name_unique
+  on public.lead_providers (name);
+
+comment on table public.lead_providers is
+  'ספקי לידים — שם, טלפון, אחוז עמלה.';
+
+alter table public.lead_providers enable row level security;
+
+drop policy if exists "lead_providers_allow_all_anon" on public.lead_providers;
+create policy "lead_providers_allow_all_anon"
+  on public.lead_providers
+  for all
+  to anon
+  using (true)
+  with check (true);
+
+drop policy if exists "lead_providers_allow_all_authenticated" on public.lead_providers;
+create policy "lead_providers_allow_all_authenticated"
+  on public.lead_providers
+  for all
+  to authenticated
+  using (true)
+  with check (true);
+
 -- agreement .docx templates (active row drives client portal)
 create table if not exists public.templates (
   id uuid primary key default gen_random_uuid (),
@@ -785,6 +840,28 @@ create trigger on_auth_user_created
   after insert on auth.users
   for each row
   execute function public.handle_new_auth_user ();
+
+-- עמלת נציג + מי סגר עסקה (דשבורד הכנסות) — אחרי ש־`profiles` קיימת
+alter table public.profiles
+  add column if not exists commission_percentage numeric(6, 2) not null default 0;
+
+alter table public.profiles
+  drop constraint if exists profiles_commission_percentage_range;
+
+alter table public.profiles
+  add constraint profiles_commission_percentage_range
+  check (commission_percentage >= 0 and commission_percentage <= 100);
+
+comment on column public.profiles.commission_percentage is
+  'אחוז עמלה 0–100; כאשר clients.closed_by מצביע על הפרופיל.';
+
+alter table public.clients
+  add column if not exists closed_by uuid references public.profiles (id) on delete set null;
+
+create index if not exists clients_closed_by_idx on public.clients (closed_by);
+
+comment on column public.clients.closed_by is
+  'פרופיל (חבר צוות) שסגר את העסקה; לשיוך עמלה בתשלומים.';
 
 
 -- >>> END: profiles_team.sql

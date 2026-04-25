@@ -51,3 +51,25 @@ create trigger on_auth_user_created
   after insert on auth.users
   for each row
   execute function public.handle_new_auth_user ();
+
+-- עמלת נציג + מי סגר עסקה (דשבורד הכנסות) — אחרי ש־`profiles` קיימת
+alter table public.profiles
+  add column if not exists commission_percentage numeric(6, 2) not null default 0;
+
+alter table public.profiles
+  drop constraint if exists profiles_commission_percentage_range;
+
+alter table public.profiles
+  add constraint profiles_commission_percentage_range
+  check (commission_percentage >= 0 and commission_percentage <= 100);
+
+comment on column public.profiles.commission_percentage is
+  'אחוז עמלה 0–100; כאשר clients.closed_by מצביע על הפרופיל.';
+
+alter table public.clients
+  add column if not exists closed_by uuid references public.profiles (id) on delete set null;
+
+create index if not exists clients_closed_by_idx on public.clients (closed_by);
+
+comment on column public.clients.closed_by is
+  'פרופיל (חבר צוות) שסגר את העסקה; לשיוך עמלה בתשלומים.';

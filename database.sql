@@ -69,6 +69,10 @@ alter table public.templates
 alter table public.templates
   alter column name set not null;
 
+-- DBs ישנים: נוצרה `templates` בלי is_active; האפליקציה מסננת .eq("is_active", true)
+alter table public.templates
+  add column if not exists is_active boolean not null default true;
+
 -- documents
 create table if not exists public.documents (
   id uuid primary key default gen_random_uuid (),

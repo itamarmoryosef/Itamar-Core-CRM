@@ -1,10 +1,8 @@
 -- =============================================================================
--- שלב 1: CORE - הרץ פעם אחת בפרויקט Supabase (חדש או נקי)
--- Supabase: SQL > New query > הדבק > Run
--- מקור: C:\Users\User\Desktop\Itamar-Core-CRM
+-- שלב 1: CORE - הרץ פעם אחת בפרויקט Supabase
 -- =============================================================================
 
--- >>>>>>>>>>>>>>>>>> BEGIN: database.sql <<<<<<<<<<<<<<<<<<
+-- >>> BEGIN: database.sql
 -- Run this entire script in the Supabase SQL Editor (Dashboard → SQL → New query).
 
 -- Extensions (gen_random_uuid)
@@ -75,6 +73,10 @@ alter table public.templates
 
 alter table public.templates
   alter column name set not null;
+
+-- DBs ישנים: נוצרה `templates` בלי is_active; האפליקציה מסננת .eq("is_active", true)
+alter table public.templates
+  add column if not exists is_active boolean not null default true;
 
 -- documents
 create table if not exists public.documents (
@@ -720,9 +722,9 @@ create policy "signature_template_fields_allow_all_authenticated"
   with check (true);
 
 
--- >>>>>>>>>>>>>>>>>> END: database.sql
+-- >>> END: database.sql
 
--- >>>>>>>>>>>>>>>>>> BEGIN: profiles_team.sql <<<<<<<<<<<<<<<<<<
+-- >>> BEGIN: profiles_team.sql
 -- אופציונלי: טבלת profiles מסונכרנת עם auth.users (לתצוגה / תפקידים בעתיד).
 -- הרצה ב-Supabase SQL Editor. אפליקציית ניהול הצוות משתמשת ב-Auth Admin API לרשימה.
 
@@ -778,9 +780,9 @@ create trigger on_auth_user_created
   execute function public.handle_new_auth_user ();
 
 
--- >>>>>>>>>>>>>>>>>> END: profiles_team.sql
+-- >>> END: profiles_team.sql
 
--- >>>>>>>>>>>>>>>>>> BEGIN: settings.sql <<<<<<<<<<<<<<<<<<
+-- >>> BEGIN: settings.sql
 -- הגדרות מערכת (מפתח/ערך). הרצה ב-Supabase SQL Editor.
 -- RLS פעיל ללא מדיניות ל-anon/authenticated — קריאה/כתיבה דרך Next.js עם SUPABASE_SERVICE_ROLE_KEY בלבד.
 
@@ -804,9 +806,9 @@ values ('grow_payment_base_url', '')
 on conflict (key) do nothing;
 
 
--- >>>>>>>>>>>>>>>>>> END: settings.sql
+-- >>> END: settings.sql
 
--- >>>>>>>>>>>>>>>>>> BEGIN: migrations/crm_v2_enhancements.sql <<<<<<<<<<<<<<<<<<
+-- >>> BEGIN: migrations/crm_v2_enhancements.sql
 -- Run in Supabase SQL Editor. Idempotent.
 -- CRM: per-client field assignment, agent, signature audit, optional status label refresh.
 
@@ -850,5 +852,5 @@ set label = 'הסתיים - ללא מכירה'
 where label = 'הסתיים - לא קיבל רישיון';
 
 
--- >>>>>>>>>>>>>>>>>> END: migrations/crm_v2_enhancements.sql
+-- >>> END: migrations/crm_v2_enhancements.sql
 

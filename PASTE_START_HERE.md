@@ -45,3 +45,9 @@ c:\Users\User\Desktop\Itamar-Core-CRM\SQL_RUN_ORDER.md
 
 ודא שאתה בדיוק בתיקייה **`Itamar-Core-CRM`** (לא העתק ישן).  
 פתח את **סייר הקבצים** (Windows) → `Desktop` → `Itamar-Core-CRM` → `supabase` — גרור קובץ לתוך חלון Cursor לפתוח אותו.
+
+## שגיאה: `column templates.is_active does not exist`
+
+הרץ **פעם אחת** ב־Supabase → SQL (או פתח והדבק):  
+`migrations\add_templates_is_active.sql`  
+(או הדבק: `alter table public.templates add column if not exists is_active boolean not null default true;`)

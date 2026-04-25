@@ -419,15 +419,13 @@ export default function AdminRevenuePage() {
       return;
     }
 
-    const profMap = new Map(
-      (profRows ?? []).map((p) => [
-        p.id as string,
-        p as {
-          id: string;
-          full_name: string | null;
-          commission_percentage: number | string | null;
-        },
-      ])
+    type ProfRow = {
+      id: string;
+      full_name: string | null;
+      commission_percentage: number | string | null;
+    };
+    const profMap = new Map<string, ProfRow>(
+      (profRows ?? []).map((p: ProfRow) => [p.id, p])
     );
 
     const raw = (data ?? []) as unknown as PaymentWithClient[];

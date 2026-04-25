@@ -972,7 +972,7 @@ function AdminClientDetailPageInner() {
         .select("id")
         .in("id", tplIdsForOrphan);
       const foundTpl = new Set(
-        (tplCheck ?? []).map((r) => String((r as { id: string }).id))
+        (tplCheck ?? []).map((r: { id: string }) => String(r.id))
       );
       const keptTplIds = tplIdsForOrphan.filter((id) => foundTpl.has(id));
       if (keptTplIds.length !== tplIdsForOrphan.length) {

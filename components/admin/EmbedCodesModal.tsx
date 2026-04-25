@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Check, Copy, Loader2, Search, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import type { PostgrestError } from "@supabase/supabase-js";
 import { normalizeCustomFieldSlugInput } from "@/lib/customFieldsTemplate";
 
 type DefRow = { id: string; label: string; slug: string };
@@ -34,13 +35,13 @@ export function EmbedCodesModal(props: {
       .from("custom_field_definitions")
       .select("id, label, slug")
       .order("label", { ascending: true })
-      .then(({ data, error }) => {
+      .then((res: { data: DefRow[] | null; error: PostgrestError | null }) => {
         setLoading(false);
-        if (error || !data) {
+        if (res.error || !res.data) {
           setRows([]);
           return;
         }
-        setRows(data as DefRow[]);
+        setRows(res.data);
       });
   }, [open]);
 

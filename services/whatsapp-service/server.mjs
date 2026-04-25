@@ -126,6 +126,13 @@ async function startConnection(key) {
 const app = express();
 app.use(express.json({ limit: "1mb" }));
 
+// Root: avoid default Express "Cannot GET /" when someone opens the bridge URL in a browser
+app.get("/", (_req, res) => {
+  res.type("text/plain; charset=utf-8").send(
+    "WhatsApp bridge (Baileys) — not the CRM. Use GET /health. Open the Next.js app (Vercel or http://localhost:3000) for the web UI."
+  );
+});
+
 app.get("/health", (_req, res) => {
   res.json({ ok: true, connections: connections.size });
 });

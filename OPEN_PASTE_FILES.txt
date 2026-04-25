@@ -1,0 +1,17 @@
+PASTE_GUIDE (read first):
+c:\Users\User\Desktop\Itamar-Core-CRM\supabase\PASTE_GUIDE.md
+
+PASTE_01 - REQUIRED (paste in Supabase SQL):
+c:\Users\User\Desktop\Itamar-Core-CRM\supabase\PASTE_01_CORE.sql
+
+PASTE_02 - optional layout:
+c:\Users\User\Desktop\Itamar-Core-CRM\supabase\PASTE_02_LAYOUT.sql
+
+PASTE_03 - optional add-ons:
+c:\Users\User\Desktop\Itamar-Core-CRM\supabase\PASTE_03_ADDONS.sql
+
+Full file list:
+c:\Users\User\Desktop\Itamar-Core-CRM\SQL_RUN_ORDER.md
+
+Start here (Hebrew+English):
+c:\Users\User\Desktop\Itamar-Core-CRM\PASTE_START_HERE.md

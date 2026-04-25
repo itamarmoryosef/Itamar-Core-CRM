@@ -1,5 +1,7 @@
 # מדריך: העתקה והדבקה ב־Supabase
 
+**אם הלינקים לא נפתחים:** `PASTE_START_HERE.md` בשורש הפרויקט (נתיבים מלאים, `Ctrl+O`).
+
 מסמך לפתיחה ב־Cursor / Notepad. **העתק** את תוכן קובץ ה־`.sql` המתאים → **Supabase** → **SQL Editor** → **New query** → **הדבק** → **Run** (או `Ctrl+Enter`).
 
 ---

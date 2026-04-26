@@ -17,6 +17,8 @@ export async function buildTemplateSignedDeclarationPdf(opts: {
   signedAt?: Date;
   agreementNotes?: string | null;
   structuredRows: PdfStructuredRow[];
+  brandName?: string;
+  brandTagline?: string;
 }): Promise<Blob | null> {
   const html = opts.agreementHtml?.trim() ?? "";
   const sig = opts.signatureDataUrl?.trim() ?? "";
@@ -39,8 +41,8 @@ export async function buildTemplateSignedDeclarationPdf(opts: {
       signedAt={signedAt}
       agreementNotes={opts.agreementNotes}
       structuredRows={opts.structuredRows}
-      brandName={publicBusinessName()}
-      brandTagline={publicBusinessTagline()}
+      brandName={opts.brandName ?? publicBusinessName()}
+      brandTagline={opts.brandTagline ?? publicBusinessTagline()}
     />
   );
 

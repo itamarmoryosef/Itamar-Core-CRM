@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Heebo } from "next/font/google";
 import { siteBaseUrl } from "@/lib/appUrls";
 import { businessName, businessTagline } from "@/lib/branding";
+import { BrandingClientLayout } from "./BrandingClientLayout";
 import "./globals.css";
 
 const heebo = Heebo({
@@ -27,7 +28,9 @@ export default function RootLayout({
       dir="rtl"
       className={`${heebo.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col font-sans">{children}</body>
+      <body className="min-h-full flex flex-col font-sans">
+        <BrandingClientLayout>{children}</BrandingClientLayout>
+      </body>
     </html>
   );
 }

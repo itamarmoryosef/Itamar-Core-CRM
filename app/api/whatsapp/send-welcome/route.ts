@@ -3,13 +3,16 @@ import { getRouteSessionUser } from "@/lib/supabaseAuthRoute";
 import { ensureClientShortId } from "@/lib/ensureClientShortId";
 import { supabaseForVerifiedAdminWhatsApp } from "@/lib/supabaseWhatsAppAdmin";
 import { whatsappPortalLinkFromShortId } from "@/lib/appUrls";
-import { businessName } from "@/lib/branding";
 import { isWhatsAppConfigured, sendWhatsAppTextMessage } from "@/lib/whatsappSend";
+import { getResolvedBranding } from "@/lib/brandingResolve";
 
 export const dynamic = "force-dynamic";
 
-function buildWelcomeMessage(fullName: string, portalLink: string): string {
-  const org = businessName();
+function buildWelcomeMessage(
+  fullName: string,
+  portalLink: string,
+  org: string
+): string {
   return `שלום ${fullName},\nברוך הבא ל־${org}. לטיפול בתיק והעלאת מסמכים, היכנסו לקישור:\n${portalLink}`;
 }
 
@@ -84,7 +87,12 @@ export async function POST(request: Request) {
       { status: 500 }
     );
   }
-  const message = buildWelcomeMessage(client.full_name as string, portalLink);
+  const brand = await getResolvedBranding();
+  const message = buildWelcomeMessage(
+    client.full_name as string,
+    portalLink,
+    brand.businessName
+  );
 
   const ok = await sendWhatsAppTextMessage({
     phone: client.phone as string,

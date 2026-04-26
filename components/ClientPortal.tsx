@@ -90,7 +90,7 @@ import {
   type TemplateFieldRow,
 } from "@/lib/agreementFormTemplateLayout";
 import { filterTemplateFieldsByAssignment } from "@/lib/fieldAssignment";
-import { publicBusinessName, publicBusinessTagline } from "@/lib/brandingPublic";
+import { useClientBranding } from "@/components/branding/BrandingRoot";
 import { parseClientCustomFieldsData } from "@/lib/customFieldsTemplate";
 import { applyCalculationsToDraft } from "@/lib/crmFormulaEval";
 import { normalizeCrmFieldType } from "@/lib/crmFieldLayout";
@@ -469,6 +469,8 @@ function ClientPortalImpl({ clientId }: ClientPortalProps) {
     return null;
   }, [searchParams]);
 
+  const clientBranding = useClientBranding();
+
   /** Documents-only link: hide agreement / signature UI. */
   const hideSignatureUi = portalMode === "documents";
   /** Sign-only link: hide required-doc upload checklist. */
@@ -588,31 +590,46 @@ function ClientPortalImpl({ clientId }: ClientPortalProps) {
 
   const loadClient = useCallback(async () => {
     setLoadError(null);
-    const [portalRes, slugRes] = await Promise.all([
-      fetchClientRowForPortal(supabase, clientId),
-      supabase.from("custom_field_definitions").select("slug"),
-    ]);
-
+    const portalRes = await fetchClientRowForPortal(supabase, clientId);
     const { data, error } = portalRes;
-
-    if (slugRes.data) {
-      customFieldDefinitionSlugsRef.current = (slugRes.data as { slug: string }[])
-        .map((r) => r.slug?.trim())
-        .filter((s): s is string => Boolean(s));
-    }
 
     if (error) {
       console.warn("[ClientPortal] loadClient:", error);
       setLoadError("שגיאה בטעינת פרטי הלקוח. נסו שוב מאוחר יותר.");
       setClient(null);
+      customFieldDefinitionSlugsRef.current = [];
       return;
     }
     if (!data) {
       setLoadError(null);
       setClient(null);
+      customFieldDefinitionSlugsRef.current = [];
       return;
     }
     setClient(data as ClientRow);
+    const row = data as ClientRow;
+    const assigned = row.assigned_field_definition_ids;
+    if (assigned == null) {
+      const { data: slugRows } = await supabase
+        .from("custom_field_definitions")
+        .select("slug");
+      customFieldDefinitionSlugsRef.current = (slugRows as { slug: string }[] | null)
+        ?.map((r) => r.slug?.trim())
+        .filter((s): s is string => Boolean(s)) ?? [];
+    } else {
+      const ids = (assigned as unknown[]).map((x) => String(x).trim()).filter(Boolean);
+      if (ids.length === 0) {
+        customFieldDefinitionSlugsRef.current = [];
+      } else {
+        const { data: slugRows } = await supabase
+          .from("custom_field_definitions")
+          .select("slug")
+          .in("id", ids);
+        customFieldDefinitionSlugsRef.current = (slugRows as { slug: string }[] | null)
+          ?.map((r) => r.slug?.trim())
+          .filter((s): s is string => Boolean(s)) ?? [];
+      }
+    }
   }, [clientId]);
 
   const loadDocuments = useCallback(async (): Promise<
@@ -1937,6 +1954,8 @@ function ClientPortalImpl({ clientId }: ClientPortalProps) {
                 signatureDataUrl,
                 agreementNotes: client.agreement_notes?.trim() || null,
                 structuredRows: structuredPdfRows,
+                brandName: clientBranding.businessName,
+                brandTagline: clientBranding.tagline,
               });
               if (!signedBlob) {
                 console.error(
@@ -1954,6 +1973,8 @@ function ClientPortalImpl({ clientId }: ClientPortalProps) {
                 agreementHtml: htmlForSign,
                 signatureDataUrl,
                 agreementNotes: client.agreement_notes?.trim() || null,
+                brandName: clientBranding.businessName,
+                brandTagline: clientBranding.tagline,
               });
               if (!signedBlob) {
                 console.error(
@@ -2070,6 +2091,8 @@ function ClientPortalImpl({ clientId }: ClientPortalProps) {
               signatureDataUrl,
               agreementNotes: client.agreement_notes?.trim() || null,
               structuredRows: structuredPdfRows,
+              brandName: clientBranding.businessName,
+              brandTagline: clientBranding.tagline,
             });
             if (!signedBlob) {
               console.error(
@@ -2087,6 +2110,8 @@ function ClientPortalImpl({ clientId }: ClientPortalProps) {
               agreementHtml: htmlForSign,
               signatureDataUrl,
               agreementNotes: client.agreement_notes?.trim() || null,
+              brandName: clientBranding.businessName,
+              brandTagline: clientBranding.tagline,
             });
             if (!signedBlob) {
               console.error(
@@ -2873,10 +2898,10 @@ function ClientPortalImpl({ clientId }: ClientPortalProps) {
         <div className="flex flex-wrap items-start justify-between gap-2 gap-y-2">
           <div className="min-w-0 flex-1 text-start">
             <p className="text-base font-bold tracking-tight text-neutral-900 dark:text-neutral-50 sm:text-lg">
-              {publicBusinessName()}
+              {clientBranding.businessName}
             </p>
             <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-neutral-600 dark:text-neutral-400">
-              <span>פורטל לקוח — {publicBusinessTagline()}</span>
+              <span>פורטל לקוח — {clientBranding.tagline}</span>
               {portalMode === "sign" ? (
                 <span className="rounded-md bg-violet-100 px-2 py-0.5 text-xs font-semibold text-violet-900 dark:bg-violet-950/70 dark:text-violet-200">
                   חתימה

@@ -57,6 +57,10 @@ import {
 } from "@/lib/adminClientGlobalCatalog";
 import { supabase } from "@/lib/supabase";
 import {
+  fetchActiveClientStatusesForCrmPickers,
+  sortClientStatusesByOrderAndLabel,
+} from "@/lib/clientStatusesAdminQuery";
+import {
   CLIENT_CRM_STATUS_DEFAULT,
   normalizeClientCrmStatus,
 } from "@/lib/clientCrmStatus";
@@ -173,10 +177,6 @@ type ClientDetail = {
   lead_provider_name?: string | null;
   /** Team profile who closed the deal (sales attribution). */
   closed_by?: string | null;
-  /** Team member (profiles.id) — CRM agent for this client. */
-  agent_profile_id?: string | null;
-  /** If non-null, only these custom field definition IDs on agreement/signature. */
-  assigned_field_definition_ids?: string[] | null;
   agreement_template_ids?: string[] | null;
   agreement_template_sign_index?: number | null;
   /** Form layout template for portal (agreement_templates, legacy — רשת בפורטל בלי בלוק PDF). */
@@ -198,6 +198,8 @@ type ClientStatusOption = {
   color_hex: string;
   sort_order: number;
   is_system: boolean;
+  /** Omitted in DBs without add_client_statuses_is_active.sql */
+  is_active?: boolean | null;
 };
 
 type CustomFieldSectionRow = {
@@ -552,14 +554,6 @@ function AdminClientDetailPageInner() {
   const [editLeadSource, setEditLeadSource] = useState("");
   const [editLeadProviderName, setEditLeadProviderName] = useState("");
   const [editClosedBy, setEditClosedBy] = useState("");
-  const [agentProfileOptions, setAgentProfileOptions] = useState<
-    { id: string; full_name: string | null; email: string | null }[]
-  >([]);
-  const [editAgentProfileId, setEditAgentProfileId] = useState("");
-  const [portalFieldInclude, setPortalFieldInclude] = useState<
-    Record<string, boolean>
-  >({});
-  const [crmScopeSaving, setCrmScopeSaving] = useState(false);
   const [closerProfileOptions, setCloserProfileOptions] = useState<
     { id: string; full_name: string | null }[]
   >([]);
@@ -653,7 +647,7 @@ function AdminClientDetailPageInner() {
     setRemindersLoadError(null);
     const res = await fetch(
       `/api/admin/reminders?clientId=${encodeURIComponent(clientId)}`,
-      { credentials: "include" }
+      { credentials: "include", cache: "no-store" }
     );
     let data: {
       reminders?: ScheduledReminderUi[];
@@ -785,56 +779,78 @@ function AdminClientDetailPageInner() {
     };
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
-    void fetch("/api/admin/team", { credentials: "include" })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d: { members?: { id: string; full_name: string | null; email: string | null }[] } | null) => {
-        if (cancelled || !d?.members) return;
-        setAgentProfileOptions(
-          d.members.map((m) => ({
-            id: m.id,
-            full_name: m.full_name,
-            email: m.email ?? null,
-          }))
-        );
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!client) return;
-    setEditAgentProfileId(client.agent_profile_id?.trim() ?? "");
-    const a = client.assigned_field_definition_ids;
-    const next: Record<string, boolean> = {};
-    for (const d of customFieldDefinitions) {
-      next[d.id] = a == null ? true : a.includes(d.id);
-    }
-    setPortalFieldInclude(next);
-  }, [client, customFieldDefinitions]);
-
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      const { data, error } = await supabase
-        .from("client_statuses")
-        .select("id, label, color_hex, sort_order, is_system")
-        .order("sort_order", { ascending: true })
-        .order("label", { ascending: true });
-      if (cancelled) return;
-      if (error) {
-        setClientStatuses([]);
-        return;
+  const loadClientStatuses = useCallback(async () => {
+    try {
+      const res = await fetch(
+        `/api/admin/client-statuses?t=${Date.now()}`,
+        {
+          credentials: "include",
+          cache: "no-store",
+        }
+      );
+      if (res.ok) {
+        const raw = await res.text();
+        let j: { statuses?: ClientStatusOption[]; error?: string };
+        try {
+          j = JSON.parse(raw) as { statuses?: ClientStatusOption[]; error?: string };
+        } catch (e) {
+          console.warn(
+            "[Client Card] /api/admin/client-statuses JSON parse error:",
+            e
+          );
+          return;
+        }
+        if (Array.isArray(j.statuses)) {
+          setClientStatuses(sortClientStatusesByOrderAndLabel(j.statuses));
+          return;
+        }
+      } else {
+        if (process.env.NODE_ENV === "development") {
+          const errText = await res.text().catch(() => "");
+          console.warn(
+            "[Client Card] /api/admin/client-statuses failed:",
+            res.status,
+            errText
+          );
+        }
       }
-      setClientStatuses((data ?? []) as ClientStatusOption[]);
-    })();
+    } catch (e) {
+      if (process.env.NODE_ENV === "development") {
+        console.warn("[Client Card] client-statuses API fetch error:", e);
+      }
+    }
+    const rows = await fetchActiveClientStatusesForCrmPickers(supabase);
+    setClientStatuses(
+      sortClientStatusesByOrderAndLabel(rows as ClientStatusOption[])
+    );
+  }, []);
+
+  useEffect(() => {
+    if (!clientId) return;
+    let cancelled = false;
+    const run = () => {
+      if (!cancelled) void loadClientStatuses();
+    };
+    run();
+    const onVisible = () => {
+      if (document.visibilityState === "visible") run();
+    };
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       cancelled = true;
+      document.removeEventListener("visibilitychange", onVisible);
     };
-  }, []);
+  }, [clientId, loadClientStatuses]);
+
+  /** Forces a fresh <select> when the option list or client changes (empty → loaded). */
+  const crmStatusSelectRenderKey = useMemo(
+    () =>
+      `${String(clientId ?? "")}:n=${clientStatuses.length}:ids=${[...clientStatuses]
+        .map((s) => s.id)
+        .sort()
+        .join(",")}`,
+    [clientId, clientStatuses]
+  );
 
   const validStatusLabels = useMemo(
     () => new Set(clientStatuses.map((s) => s.label)),
@@ -938,17 +954,6 @@ function AdminClientDetailPageInner() {
             ? null
             : String(rawRow.Phone)
           : String(rawRow.phone),
-      agent_profile_id:
-        rawRow.agent_profile_id != null
-          ? String(rawRow.agent_profile_id)
-          : null,
-      assigned_field_definition_ids: Array.isArray(
-        rawRow.assigned_field_definition_ids
-      )
-        ? (rawRow.assigned_field_definition_ids as unknown[]).map((x) =>
-            String(x)
-          )
-        : null,
     };
     const { data: dRows } = await supabase
       .from("documents")
@@ -972,7 +977,7 @@ function AdminClientDetailPageInner() {
         .select("id")
         .in("id", tplIdsForOrphan);
       const foundTpl = new Set(
-        (tplCheck ?? []).map((r: { id: string }) => String(r.id))
+        (tplCheck ?? []).map((r) => String((r as { id: string }).id))
       );
       const keptTplIds = tplIdsForOrphan.filter((id) => foundTpl.has(id));
       if (keptTplIds.length !== tplIdsForOrphan.length) {
@@ -1016,6 +1021,75 @@ function AdminClientDetailPageInner() {
     setDocs(docRows);
     /** Show שם / ת״ז / טלפון מיד — לא מחכים להערות/תשלומים/CFV (מניעת כרטיס ריק או סקלטון אינסופי). */
     setOverviewFieldValuesReady(true);
+
+    if (seq === loadAllSeqRef.current) {
+      try {
+        const stRes = await fetch(
+          `/api/admin/client-statuses?t=${Date.now()}`,
+          {
+            credentials: "include",
+            cache: "no-store",
+          }
+        );
+        if (stRes.ok) {
+          const raw = await stRes.text();
+          const stJson = (() => {
+            try {
+              return JSON.parse(raw) as { statuses?: ClientStatusOption[] };
+            } catch (e) {
+              console.warn(
+                "[admin client] client_statuses JSON in loadAll:",
+                e
+              );
+              return null;
+            }
+          })();
+          if (
+            stJson &&
+            Array.isArray(stJson.statuses) &&
+            seq === loadAllSeqRef.current
+          ) {
+            setClientStatuses(
+              sortClientStatusesByOrderAndLabel(stJson.statuses)
+            );
+          }
+        } else {
+          const { data: stRows, error: stErr } = await supabase
+            .from("client_statuses")
+            .select("id, label, color_hex, sort_order, is_system")
+            .order("sort_order", { ascending: true })
+            .order("label", { ascending: true });
+          if (seq === loadAllSeqRef.current) {
+            if (stErr) {
+              console.warn(
+                "[admin client] client_statuses fallback (browser):",
+                stErr.message
+              );
+            } else {
+              setClientStatuses(
+                sortClientStatusesByOrderAndLabel(
+                  (stRows ?? []) as ClientStatusOption[]
+                )
+              );
+            }
+          }
+        }
+      } catch (e) {
+        console.warn("[admin client] client_statuses fetch:", e);
+        const { data: stRows } = await supabase
+          .from("client_statuses")
+          .select("id, label, color_hex, sort_order, is_system")
+          .order("sort_order", { ascending: true })
+          .order("label", { ascending: true });
+        if (seq === loadAllSeqRef.current) {
+          setClientStatuses(
+            sortClientStatusesByOrderAndLabel(
+              (stRows ?? []) as ClientStatusOption[]
+            )
+          );
+        }
+      }
+    }
 
     /* Secondary loads — לא חוסמים את תצוגת הליבה */
     try {
@@ -1632,9 +1706,23 @@ function AdminClientDetailPageInner() {
       status: nextLabel ?? previous,
     });
     setStatusUpdating(true);
+    const wasWaiting =
+      (previous?.trim() === CLIENT_CRM_STATUS_DEFAULT) ||
+      (clientStatuses.find(
+        (s) => s.id.toLowerCase() === (client.status_id ?? "").toLowerCase()
+      )?.label?.trim() === CLIENT_CRM_STATUS_DEFAULT);
+    const isNowWaiting =
+      (nextLabel?.trim() === CLIENT_CRM_STATUS_DEFAULT) ||
+      (clientStatuses.find(
+        (s) => s.id.toLowerCase() === resolvedId.toLowerCase()
+      )?.label?.trim() === CLIENT_CRM_STATUS_DEFAULT);
+    const leaveWaitingPipeline =
+      wasWaiting && !isNowWaiting
+        ? { upload_request_active: false, next_custom_reminder: null as null }
+        : {};
     const { error } = await supabase
       .from("clients")
-      .update({ status_id: resolvedId })
+      .update({ status_id: resolvedId, ...leaveWaitingPipeline })
       .eq("id", client.id);
     setStatusUpdating(false);
     if (error) {
@@ -1656,6 +1744,7 @@ function AdminClientDetailPageInner() {
     void fetch("/api/whatsapp/send-license-granted-review", {
       method: "POST",
       credentials: "include",
+      cache: "no-store",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         clientId: client.id,
@@ -1760,45 +1849,6 @@ function AdminClientDetailPageInner() {
     });
     setDetailsEditing(false);
     setToast({ type: "success", message: "פרטי הלקוח נשמרו." });
-  };
-
-  const saveCrmScope = async () => {
-    if (!client) return;
-    setCrmScopeSaving(true);
-    const allOn =
-      customFieldDefinitions.length > 0 &&
-      customFieldDefinitions.every((d) => portalFieldInclude[d.id] !== false);
-    const assignedIds = allOn
-      ? null
-      : customFieldDefinitions
-          .filter((d) => portalFieldInclude[d.id])
-          .map((d) => d.id);
-    const { error } = await supabase
-      .from("clients")
-      .update({
-        agent_profile_id: editAgentProfileId.trim() || null,
-        assigned_field_definition_ids: assignedIds,
-      })
-      .eq("id", client.id);
-    setCrmScopeSaving(false);
-    if (error) {
-      if (/does not exist|column|assigned_field|agent_profile/i.test(error.message)) {
-        setToast({
-          type: "error",
-          message:
-            "הריצו ב-Supabase את migrations/crm_v2_enhancements.sql (עמודות agent ושדות מותאמים).",
-        });
-      } else {
-        setToast({ type: "error", message: error.message });
-      }
-      return;
-    }
-    setClient({
-      ...client,
-      agent_profile_id: editAgentProfileId.trim() || null,
-      assigned_field_definition_ids: assignedIds,
-    });
-    setToast({ type: "success", message: "שיוך סוכן ושדות בפורטל נשמרו." });
   };
 
   const saveAgreementNotes = async () => {
@@ -2234,6 +2284,7 @@ function AdminClientDetailPageInner() {
       const res = await fetch("/api/whatsapp/send-document-request", {
         method: "POST",
         credentials: "include",
+        cache: "no-store",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ clientId }),
       });
@@ -2270,6 +2321,7 @@ function AdminClientDetailPageInner() {
       const res = await fetch("/api/whatsapp/send-welcome", {
         method: "POST",
         credentials: "include",
+        cache: "no-store",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ clientId }),
       });
@@ -2309,10 +2361,10 @@ function AdminClientDetailPageInner() {
   const handleFreeMessageFormSubmit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     e.stopPropagation();
-    void submitFreeMessageToWhatsApp();
+    void submitFreeMessageViaGreen();
   };
 
-  const submitFreeMessageToWhatsApp = async () => {
+  const submitFreeMessageViaGreen = async () => {
     if (!clientId || !client) return;
     const text = freeMessageText.trim();
     if (!text) {
@@ -2331,6 +2383,7 @@ function AdminClientDetailPageInner() {
       const res = await fetch("/api/whatsapp/send-free-message", {
         method: "POST",
         credentials: "include",
+        cache: "no-store",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ clientId, message: text }),
       });
@@ -2370,6 +2423,7 @@ function AdminClientDetailPageInner() {
       const res = await fetch("/api/whatsapp/send-doc-reminder", {
         method: "POST",
         credentials: "include",
+        cache: "no-store",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ clientId, missingDocName }),
       });
@@ -2420,6 +2474,7 @@ function AdminClientDetailPageInner() {
       const res = await fetch("/api/admin/reminders", {
         method: "POST",
         credentials: "include",
+        cache: "no-store",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           kind: "settings",
@@ -2477,6 +2532,7 @@ function AdminClientDetailPageInner() {
       const res = await fetch("/api/admin/reminders", {
         method: "POST",
         credentials: "include",
+        cache: "no-store",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           kind: "schedule",
@@ -2518,7 +2574,7 @@ function AdminClientDetailPageInner() {
     try {
       const res = await fetch(
         `/api/admin/reminders?id=${encodeURIComponent(reminderId)}`,
-        { method: "DELETE", credentials: "include" }
+        { method: "DELETE", credentials: "include", cache: "no-store" }
       );
       let data: { error?: string } = {};
       try {
@@ -2634,6 +2690,7 @@ function AdminClientDetailPageInner() {
       const res = await fetch("/api/whatsapp/send-signature-request", {
         method: "POST",
         credentials: "include",
+        cache: "no-store",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           clientId,
@@ -3089,7 +3146,9 @@ function AdminClientDetailPageInner() {
     );
   }
 
-  const crmStatusRow = clientStatuses.find((s) => s.id === client.status_id);
+  const crmStatusRow = clientStatuses.find(
+    (s) => String(s.id) === String(client.status_id ?? "")
+  );
   const crmDisplayLabel =
     crmStatusRow?.label ??
     normalizeClientCrmStatus(client.status, {
@@ -3097,6 +3156,42 @@ function AdminClientDetailPageInner() {
       fallbackLabel: fallbackStatusLabel,
     });
   const crmBadge = clientStatusBadgeStyle(crmStatusRow?.color_hex ?? "#64748b");
+
+  const crmStatusPickerCore = (
+    <div className="w-full min-w-0 max-w-full space-y-1.5 overflow-visible">
+      <span
+        className="inline-flex max-w-full rounded px-1.5 py-0.5 text-[10px] font-semibold"
+        style={{
+          backgroundColor: crmBadge.backgroundColor,
+          color: crmBadge.color,
+        }}
+      >
+        {crmDisplayLabel}
+      </span>
+      <select
+        key={crmStatusSelectRenderKey}
+        aria-label="סטטוס CRM"
+        value={String(client.status_id ?? "")}
+        disabled={statusUpdating || clientStatuses.length === 0}
+        onChange={(e) => void handleCrmStatusChange(e.target.value)}
+        className="h-auto min-h-9 w-full min-w-0 max-w-full cursor-pointer text-start disabled:opacity-60"
+      >
+        {clientStatuses.length === 0 ? (
+          <option value="">—</option>
+        ) : (
+          clientStatuses.map((s) => (
+            <option key={s.id} value={String(s.id)}>
+              {s.label}
+            </option>
+          ))
+        )}
+      </select>
+      {statusUpdating ? (
+        <span className="block text-[10px] text-slate-500">שומר…</span>
+      ) : null}
+    </div>
+  );
+
   const hasPhone = Boolean(client.phone?.trim());
   const freeMessagePhoneOk = israeliPhoneDigitsForWaMe(client.phone) !== null;
 
@@ -3233,37 +3328,7 @@ function AdminClientDetailPageInner() {
       if (k === "crm_status") {
         return (
           <ClientDetailFieldStrip label={lb}>
-            <div className="space-y-1.5 p-2">
-              <span
-                className="inline-flex max-w-full rounded px-1.5 py-0.5 text-[10px] font-semibold"
-                style={{
-                  backgroundColor: crmBadge.backgroundColor,
-                  color: crmBadge.color,
-                }}
-              >
-                {crmDisplayLabel}
-              </span>
-              <select
-                aria-label="סטטוס CRM"
-                value={client.status_id ?? ""}
-                disabled={statusUpdating || clientStatuses.length === 0}
-                onChange={(e) => void handleCrmStatusChange(e.target.value)}
-                className="cursor-pointer disabled:opacity-60"
-              >
-                {clientStatuses.length === 0 ? (
-                  <option value="">—</option>
-                ) : (
-                  clientStatuses.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.label}
-                    </option>
-                  ))
-                )}
-              </select>
-              {statusUpdating ? (
-                <span className="block text-[10px] text-slate-500">שומר…</span>
-              ) : null}
-            </div>
+            <div className="p-2">{crmStatusPickerCore}</div>
           </ClientDetailFieldStrip>
         );
       }
@@ -3513,8 +3578,8 @@ function AdminClientDetailPageInner() {
                     </button>
                   </div>
                   <p className="mt-2 text-start text-xs text-neutral-600 dark:text-neutral-400">
-                    ההודעה נשלחת מהשרת ללקוח דרך שירות WhatsApp (החיבור
-                    בדף &quot;הגדרות → WhatsApp&quot;). לאחר שליחה מוצלחת יעודכן זמן התזכורת האחרון, מצב
+                    ההודעה נשלחת מהשרת ללקוח דרך Green API (ללא פתיחת WhatsApp
+                    בדפדפן). לאחר שליחה מוצלחת יעודכן זמן התזכורת האחרון, מצב
                     התזכורות יוגדר לאוטומטי, ותאריך תזכורת ידנית (אם היה) יימחק.
                   </p>
                   <label className="mt-4 block text-start text-sm font-medium text-neutral-800 dark:text-neutral-200">
@@ -3559,7 +3624,7 @@ function AdminClientDetailPageInner() {
                       type="button"
                       disabled={!freeMessagePhoneOk || isSending}
                       aria-busy={isSending}
-                      onClick={() => void submitFreeMessageToWhatsApp()}
+                      onClick={() => void submitFreeMessageViaGreen()}
                       className="inline-flex h-9 min-h-9 w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700 disabled:opacity-50 dark:bg-emerald-500 dark:hover:bg-emerald-600 sm:min-w-[12rem] sm:w-auto"
                     >
                       {isSending ? (
@@ -3570,7 +3635,7 @@ function AdminClientDetailPageInner() {
                       ) : (
                         <Send className="h-4 w-4 shrink-0" aria-hidden />
                       )}
-                      שלח הודעה חופשית V2
+                      שלח הודעה חופשית
                     </button>
                     <button
                       type="button"
@@ -3961,25 +4026,6 @@ function AdminClientDetailPageInner() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => void sendSignatureRequestWhatsApp(false)}
-                  disabled={
-                    signatureRequestSending ||
-                    (effectiveSignatureTemplateIdsForWhatsApp.length === 0 &&
-                      pendingSignatureDocsForWhatsApp.length === 0) ||
-                    !hasPhone
-                  }
-                  className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 text-xs font-semibold text-emerald-900 shadow-sm hover:bg-emerald-100 disabled:opacity-50 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-100"
-                  title="שליחה חוזרת של הודעת הוואטסאפ עם קישור לחתימה"
-                >
-                  {signatureRequestSending ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-                  ) : (
-                    <FileSignature className="h-3.5 w-3.5 shrink-0" aria-hidden />
-                  )}
-                  תזכורת: שלח שוב
-                </button>
-                <button
-                  type="button"
                   onClick={() => void sendSignatureRequestWhatsApp(true)}
                   disabled={
                     signatureRequestSending ||
@@ -4022,90 +4068,6 @@ function AdminClientDetailPageInner() {
               <p className="text-start text-xs text-slate-600 dark:text-slate-400">
                 מספר הטלפון אינו בפורמט נתמך לשליחה דרך המערכת.
               </p>
-            ) : null}
-            {client ? (
-              <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/80 p-3 text-start dark:border-slate-700 dark:bg-slate-900/30">
-                <p className="text-xs font-semibold text-slate-800 dark:text-slate-100">
-                  שיוך לסוכן ושדות בפורטל
-                </p>
-                <p className="mt-1 text-[11px] text-slate-600 dark:text-slate-400">
-                  סמנו אילו שדות (מתוך הגלובלי) יראו בפורטל. ברירת מחדל: הכל. תוויות
-                  מוגדרות ב&laquo;הגדרות → פריסת שדות&raquo; — ה-placeholders
-                  (Word/PDF) נשארים לפי <code className="rounded bg-white px-1">slug</code>.
-                </p>
-                <div className="mt-2 flex max-w-md flex-col gap-2 sm:flex-row sm:items-end">
-                  <label className="block flex-1 text-xs font-medium text-slate-700 dark:text-slate-200">
-                    סוכן / יועץ
-                    <select
-                      value={editAgentProfileId}
-                      onChange={(e) => setEditAgentProfileId(e.target.value)}
-                      className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-950"
-                    >
-                      <option value="">— ללא שיוך —</option>
-                      {agentProfileOptions.map((m) => (
-                        <option key={m.id} value={m.id}>
-                          {(m.full_name?.trim() || m.email?.trim() || m.id).slice(
-                            0,
-                            64
-                          )}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => void saveCrmScope()}
-                    disabled={crmScopeSaving}
-                    className="inline-flex h-9 min-h-9 items-center justify-center rounded-lg bg-slate-800 px-4 text-xs font-semibold text-white hover:bg-slate-900 disabled:opacity-50 dark:bg-slate-200 dark:text-slate-900"
-                  >
-                    {crmScopeSaving ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-                    ) : (
-                      "שמור שיוך ושדות"
-                    )}
-                  </button>
-                </div>
-                {customFieldDefinitions.length > 0 ? (
-                  <div className="mt-2 max-h-32 overflow-y-auto rounded-lg border border-slate-200/80 bg-white p-2 text-xs dark:border-slate-600 dark:bg-slate-950">
-                    <p className="mb-1 font-medium text-slate-700 dark:text-slate-200">
-                      שדות להצגה (פורטל/חתימה)
-                    </p>
-                    <ul className="space-y-1">
-                      {customFieldDefinitions.map((d) => (
-                        <li key={d.id} className="flex items-center gap-2">
-                          <input
-                            type="checkbox"
-                            id={`field-vis-${d.id}`}
-                            checked={portalFieldInclude[d.id] !== false}
-                            onChange={(e) => {
-                              setPortalFieldInclude((prev) => ({
-                                ...prev,
-                                [d.id]: e.target.checked,
-                              }));
-                            }}
-                            className="rounded border-slate-300"
-                          />
-                          <label htmlFor={`field-vis-${d.id}`} className="cursor-pointer">
-                            {d.label}{" "}
-                            <span className="text-slate-400">({d.slug})</span>
-                          </label>
-                        </li>
-                      ))}
-                    </ul>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const all: Record<string, boolean> = {};
-                        for (const d of customFieldDefinitions) all[d.id] = true;
-                        setPortalFieldInclude(all);
-                      }}
-                      className="mt-2 text-[11px] font-medium text-indigo-600 hover:underline dark:text-indigo-300"
-                    >
-                      סמן הכול
-                    </button>
-                  </div>
-                ) : null}
-              </div>
             ) : null}
               <nav
                 role="tablist"
@@ -4218,9 +4180,9 @@ function AdminClientDetailPageInner() {
                     </div>
                     <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-3 dark:border-neutral-700 dark:bg-neutral-900/60">
                       <p className="text-[11px] font-semibold text-neutral-500 dark:text-neutral-400">סטטוס CRM</p>
-                      <p className="mt-1 text-sm font-semibold text-neutral-900 dark:text-neutral-100">
-                        {client.status?.trim() || "—"}
-                      </p>
+                      <div className="mt-1 min-w-0 overflow-visible text-start text-neutral-900 dark:text-neutral-100">
+                        {crmStatusPickerCore}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -4753,7 +4715,7 @@ function AdminClientDetailPageInner() {
               value={editPaymentStatus}
               onChange={(e) => setEditPaymentStatus(e.target.value)}
               rows={2}
-              placeholder="למשל: שולם מקדמה 3,000 ₪ · יתרה לאחר סגירה"
+              placeholder="למשל: שולם מקדמה 3,000 ₪ · יתרה לאחר רישיון"
               className="resize-y rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 dark:border-neutral-600 dark:bg-neutral-950 dark:text-neutral-100"
             />
           </label>

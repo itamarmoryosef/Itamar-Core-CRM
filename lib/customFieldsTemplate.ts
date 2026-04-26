@@ -100,7 +100,6 @@ const HEBREW_LABEL_TO_SLUG: Record<string, string> = {
   זהות: "id_number",
   חתימה: "signature",
   הסכם: "agreement",
-  נשק: "weapon",
   רישיון: "license",
   עסקה: "deal",
 };

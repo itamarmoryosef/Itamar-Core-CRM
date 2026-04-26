@@ -28,6 +28,8 @@ import {
 import { LEAD_SOURCE_OPTIONS } from "@/lib/leadSource";
 import { displayClientNameFromRow } from "@/lib/customFieldsTemplate";
 import { resolveClientStatusIdForUpdate } from "@/lib/resolveClientStatusIdForUpdate";
+import { resolveAdminOrganizationId, setSuperActiveOrganizationId } from "@/lib/orgContextClient";
+import type { AdminMeResponse } from "@/app/api/admin/me/route";
 import {
   ResponsiveDataTable,
   type ResponsiveColumnDef,
@@ -118,6 +120,52 @@ export default function AdminClientsPage() {
   const [leadProvidersError, setLeadProvidersError] = useState<string | null>(
     null
   );
+
+  const [me, setMe] = useState<AdminMeResponse | null>(null);
+  const [meLoadDone, setMeLoadDone] = useState(false);
+  const [allOrgs, setAllOrgs] = useState<
+    { id: string; name: string; slug: string }[] | null
+  >(null);
+  const [activeOrgId, setActiveOrgId] = useState<string | null>(null);
+
+  useEffect(() => {
+    let c = false;
+    void (async () => {
+      const res = await fetch("/api/admin/me", { credentials: "include" });
+      if (!res.ok) {
+        if (!c) setMeLoadDone(true);
+        return;
+      }
+      const data = (await res.json()) as AdminMeResponse;
+      if (c) return;
+      setMe(data);
+      if (data.platformSuper) {
+        const ores = await fetch("/api/super/organizations", { credentials: "include" });
+        if (ores.ok) {
+          const oj = (await ores.json()) as {
+            organizations: { id: string; name: string; slug: string }[];
+          };
+          setAllOrgs(oj.organizations);
+          setActiveOrgId(
+            resolveAdminOrganizationId(
+              { platformSuper: true, organizationId: data.organizationId },
+              oj.organizations
+            ) ?? data.organizationId
+          );
+        } else {
+          setAllOrgs([]);
+          setActiveOrgId(data.organizationId);
+        }
+      } else {
+        setAllOrgs(null);
+        setActiveOrgId(data.organizationId);
+      }
+      setMeLoadDone(true);
+    })();
+    return () => {
+      c = true;
+    };
+  }, []);
   const [closerProfileOptions, setCloserProfileOptions] = useState<
     { id: string; full_name: string | null }[]
   >([]);
@@ -314,12 +362,26 @@ export default function AdminClientsPage() {
   }, []);
 
   const loadLeadProviders = useCallback(async () => {
+    if (!meLoadDone) return;
     setLeadProvidersLoading(true);
     setLeadProvidersError(null);
-    const { data, error } = await supabase
+    const baseQ = supabase
       .from("lead_providers")
       .select("id, name")
       .order("name", { ascending: true });
+    const first =
+      activeOrgId != null
+        ? await baseQ.eq("organization_id", activeOrgId)
+        : await baseQ;
+    let { data, error } = first;
+    if (error && activeOrgId && /column|schema/i.test(error.message)) {
+      const fb = await supabase
+        .from("lead_providers")
+        .select("id, name")
+        .order("name", { ascending: true });
+      data = fb.data;
+      error = fb.error;
+    }
     setLeadProvidersLoading(false);
     if (error) {
       setLeadProviders([]);
@@ -327,7 +389,7 @@ export default function AdminClientsPage() {
       return;
     }
     setLeadProviders((data ?? []) as LeadProviderOption[]);
-  }, []);
+  }, [activeOrgId, meLoadDone]);
 
   useEffect(() => {
     if (!addClientOpen) {
@@ -337,7 +399,7 @@ export default function AdminClientsPage() {
     void loadDocumentTypes();
     void loadSignatureTemplates();
     void loadLeadProviders();
-  }, [addClientOpen, loadDocumentTypes, loadLeadProviders, loadSignatureTemplates]);
+  }, [addClientOpen, loadDocumentTypes, loadLeadProviders, loadSignatureTemplates, activeOrgId, meLoadDone]);
 
   const portalSignatureTemplates = useMemo(
     () => signatureTemplates.filter((t) => isGlobalTemplateForPortalSignature(t)),
@@ -556,6 +618,13 @@ export default function AdminClientsPage() {
 
   const handleAddClient = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (!activeOrgId) {
+      setToast({
+        type: "error",
+        message: "אין הקצאת ארגון לפרופיל. (Super) בחרו בארגונים או הריצו migrations/ מול multi-tenancy.",
+      });
+      return;
+    }
     setClientBusy(true);
     const form = e.currentTarget;
     const fd = new FormData(form);
@@ -612,6 +681,7 @@ export default function AdminClientsPage() {
       agreement_request_active: hasSignatureDocs,
       agreement_custom_pdf_path: null,
       agreement_custom_pdf_filename: null,
+      organization_id: activeOrgId,
     };
     if (hasSignatureDocs) {
       clientPayload.agreement_source = "from_document";
@@ -904,6 +974,33 @@ export default function AdminClientsPage() {
             צור לקוח חדש
           </button>
         </header>
+
+        {me?.platformSuper && (allOrgs?.length ?? 0) > 0 ? (
+          <div className="rounded-lg border border-amber-200 bg-amber-50/90 px-3 py-2 text-sm dark:border-amber-800 dark:bg-amber-950/30">
+            <label className="flex flex-wrap items-center gap-2">
+              <span className="font-medium text-amber-950 dark:text-amber-100">ארגון (יצירה ולידים)</span>
+              <select
+                className="min-w-[12rem] rounded border border-amber-300 bg-white px-2 py-1 text-sm dark:border-amber-700 dark:bg-slate-900"
+                value={activeOrgId ?? ""}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setActiveOrgId(v || null);
+                  setSuperActiveOrganizationId(v || null);
+                }}
+              >
+                {(allOrgs ?? []).map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.name} ({o.slug})
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        ) : me && me.organization && !me.platformSuper ? (
+          <p className="text-start text-sm text-neutral-500">
+            ארגון: {me.organization.name} ({me.organization.slug})
+          </p>
+        ) : null}
 
         {addClientOpen ? (
           <div

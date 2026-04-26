@@ -13,7 +13,8 @@ function authHeader(): { Authorization: string } | { Authorization?: undefined }
 }
 
 export function bridgeConfigured(): boolean {
-  return getWhatsAppBridgeBaseUrl() != null && process.env.WHATSAPP_SERVICE_TOKEN != null;
+  const t = process.env.WHATSAPP_SERVICE_TOKEN?.trim();
+  return getWhatsAppBridgeBaseUrl() != null && Boolean(t);
 }
 
 function base(): string {

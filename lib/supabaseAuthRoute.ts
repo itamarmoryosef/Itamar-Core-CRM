@@ -1,6 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
-import type { User } from "@supabase/supabase-js";
+import type { SupabaseClient, User } from "@supabase/supabase-js";
 import { normalizeSupabaseProjectUrl } from "@/lib/supabaseUrl";
 
 /** Current user from cookies (App Router route handlers / server actions). */
@@ -31,4 +31,30 @@ export async function getRouteSessionUser(): Promise<User | null> {
     data: { user },
   } = await supabase.auth.getUser();
   return user;
+}
+
+/** Supabase client using the caller's cookies (same as auth session) for server routes. */
+export async function getRouteHandlerSupabase(): Promise<SupabaseClient> {
+  const url = normalizeSupabaseProjectUrl(process.env.NEXT_PUBLIC_SUPABASE_URL);
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim();
+  if (!url || !anonKey) {
+    throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY");
+  }
+  const cookieStore = await cookies();
+  return createServerClient(url, anonKey, {
+    cookies: {
+      getAll() {
+        return cookieStore.getAll();
+      },
+      setAll(cookiesToSet) {
+        try {
+          cookiesToSet.forEach(({ name, value, options }) => {
+            cookieStore.set(name, value, options);
+          });
+        } catch {
+          /* */
+        }
+      },
+    },
+  });
 }

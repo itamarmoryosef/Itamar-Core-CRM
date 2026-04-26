@@ -3,8 +3,8 @@ import { getRouteSessionUser } from "@/lib/supabaseAuthRoute";
 import { ensureClientShortId } from "@/lib/ensureClientShortId";
 import { supabaseForVerifiedAdminWhatsApp } from "@/lib/supabaseWhatsAppAdmin";
 import { whatsappPortalLinkFromShortIdWithMode } from "@/lib/appUrls";
-import { businessName } from "@/lib/branding";
 import { isWhatsAppConfigured, sendWhatsAppTextMessage } from "@/lib/whatsappSend";
+import { getResolvedBranding } from "@/lib/brandingResolve";
 
 export const dynamic = "force-dynamic";
 
@@ -16,9 +16,9 @@ export const dynamic = "force-dynamic";
 function buildDocReminderMessage(
   fullName: string,
   docName: string,
-  portalLink: string
+  portalLink: string,
+  org: string
 ): string {
-  const org = businessName();
   return [
     `שלום ${fullName},`,
     "",
@@ -99,10 +99,12 @@ export async function POST(request: Request) {
       { status: 500 }
     );
   }
+  const brand = await getResolvedBranding();
   const message = buildDocReminderMessage(
     String(client.full_name ?? "לקוח"),
     missingDocName,
-    portalLink
+    portalLink,
+    brand.businessName
   );
 
   const ok = await sendWhatsAppTextMessage({

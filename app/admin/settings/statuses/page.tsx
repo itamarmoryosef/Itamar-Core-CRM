@@ -13,6 +13,10 @@ import {
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { clientStatusBadgeStyle } from "@/lib/clientStatusStyle";
+import {
+  fetchAllClientStatuses,
+  isMissingIsActiveColumn,
+} from "@/lib/clientStatusesAdminQuery";
 
 type ClientStatusRow = {
   id: string;
@@ -20,6 +24,7 @@ type ClientStatusRow = {
   color_hex: string;
   sort_order: number;
   is_system: boolean;
+  is_active?: boolean | null;
 };
 
 const cardClass =
@@ -54,11 +59,7 @@ export default function AdminStatusesSettingsPage() {
   const load = useCallback(async () => {
     setLoading(true);
     setLoadError(null);
-    const { data, error } = await supabase
-      .from("client_statuses")
-      .select("id, label, color_hex, sort_order, is_system")
-      .order("sort_order", { ascending: true })
-      .order("label", { ascending: true });
+    const { data, error } = await fetchAllClientStatuses(supabase);
 
     setLoading(false);
     if (error) {
@@ -227,12 +228,18 @@ export default function AdminStatusesSettingsPage() {
         ? 0
         : Math.max(...rows.map((r) => r.sort_order), 0) + 1;
     setBusy(true);
-    const { error } = await supabase.from("client_statuses").insert({
+    const payload: Record<string, string | number | boolean> = {
       label,
       color_hex: hex,
       sort_order: nextOrder,
       is_system: false,
-    });
+      is_active: true,
+    };
+    let { error } = await supabase.from("client_statuses").insert(payload);
+    if (error && isMissingIsActiveColumn(error.message)) {
+      delete payload.is_active;
+      ({ error } = await supabase.from("client_statuses").insert(payload));
+    }
     setBusy(false);
     if (error) {
       setToast({ type: "error", message: error.message });
@@ -507,6 +514,24 @@ export default function AdminStatusesSettingsPage() {
                     >
                       {r.label}
                     </span>
+                    <label className="grid w-[5.5rem] shrink-0 gap-1 text-start text-sm">
+                      <span className="text-neutral-600 dark:text-neutral-300">
+                        סדר תצוגה
+                      </span>
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        key={`o-${r.id}-${r.sort_order}`}
+                        defaultValue={r.sort_order}
+                        disabled={busy}
+                        onBlur={(e) => {
+                          const n = parseInt(e.target.value, 10);
+                          if (!Number.isFinite(n) || n === r.sort_order) return;
+                          void saveRowPatch(r.id, { sort_order: n });
+                        }}
+                        className="w-full min-w-0 rounded-lg border border-neutral-300 bg-white px-2 py-2 text-center text-sm text-neutral-900 dark:border-neutral-600 dark:bg-neutral-950 dark:text-neutral-100"
+                      />
+                    </label>
                     <label className="grid min-w-0 flex-1 gap-1 text-start text-sm">
                       <span className="sr-only">שם סטטוס</span>
                       <input

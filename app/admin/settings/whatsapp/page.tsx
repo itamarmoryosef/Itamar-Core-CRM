@@ -15,13 +15,13 @@ export default function AdminWhatsAppSettingsPage() {
         <div>
           <Link
             href="/admin/settings"
-            className="text-sm font-medium text-indigo-600 hover:underline dark:text-indigo-400"
+            className="text-sm font-medium text-brand hover:underline"
           >
             ← חזרה להגדרות
           </Link>
           <h1 className="mt-2 text-2xl font-bold tracking-tight">חיבור WhatsApp</h1>
           <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
-            סרקו QR או השתמשו ב-Pairing Code. השרת (Baileys) חייב לרוף 24/7 — ראו
+            סרקו QR או השתמשו ב-Pairing Code. השרת (Baileys) חייב לרוץ 24/7 — ראו
             <code className="mx-1 rounded bg-slate-200 px-1 text-xs dark:bg-zinc-800">
               services/whatsapp-service
             </code>{" "}

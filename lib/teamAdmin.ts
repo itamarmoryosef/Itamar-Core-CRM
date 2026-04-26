@@ -17,3 +17,25 @@ export async function isProfileTeamAdmin(
   }
   return data?.role === "admin";
 }
+
+export async function isProfilePlatformSuper(
+  client: SupabaseClient,
+  userId: string
+): Promise<boolean> {
+  const { data, error } = await client
+    .from("profiles")
+    .select("is_platform_super")
+    .eq("id", userId)
+    .maybeSingle();
+
+  if (error) {
+    const m = error.message?.toLowerCase() ?? "";
+    if (m.includes("is_platform_super") || m.includes("column")) {
+      return false;
+    }
+    console.error("[platformSuper] profiles lookup failed", error.message);
+    return false;
+  }
+  return (data as { is_platform_super?: boolean } | null)
+    ?.is_platform_super === true;
+}

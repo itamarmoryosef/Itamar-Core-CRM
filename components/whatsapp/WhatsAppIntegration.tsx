@@ -3,6 +3,8 @@
 import * as React from "react";
 import { MessageCircle, QrCode, Loader2, RefreshCw, Smartphone, Plus, CheckCircle2, Trash2 } from "lucide-react";
 import { MessageTemplatesManager } from "@/components/whatsapp/MessageTemplatesManager";
+import { WhatsAppBridgeStatusBar } from "@/components/whatsapp/WhatsAppBridgeStatusBar";
+import { useAdminSession } from "@/lib/adminSessionContext";
 
 function cn(...classes: (string | false | undefined | null)[]) {
   return classes.filter(Boolean).join(" ");
@@ -70,6 +72,7 @@ const waTr: Record<string, string> = {
 };
 
 export function WhatsAppIntegration() {
+  const adminSession = useAdminSession();
   const t = React.useCallback(
     (key: string, fallback?: string) => waTr[key] ?? fallback ?? key,
     []
@@ -338,8 +341,24 @@ export function WhatsAppIntegration() {
     error: t("whatsapp.disconnected_label"),
   }[status] ?? t("whatsapp.disconnected_label");
 
+  const showWhatsappDisabledHint =
+    adminSession?.activeOrganization != null &&
+    adminSession.activeOrganization.whatsapp_enabled !== true;
+
   return (
     <div className="space-y-4" dir="rtl">
+      {showWhatsappDisabledHint ? (
+        <div
+          className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-start text-xs text-slate-700"
+          role="note"
+        >
+          סרגל &quot;סטטוס חיבור ה-Bridge&quot; מוסתר לארגון זה. כדי להציגו, הגדירו ב־
+          <code className="mx-1 rounded bg-white px-1 font-mono text-[11px]">branding_settings</code>
+          את המפתח <code className="rounded bg-white px-1 font-mono text-[11px]">whatsapp_enabled</code>
+          ל־<code className="rounded bg-white px-1 font-mono text-[11px]">true</code> (עדכון ארגון ב-Super או ב-API).
+        </div>
+      ) : null}
+      <WhatsAppBridgeStatusBar />
       <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
         <div className="relative border-b border-gray-100 px-4 pb-4 pt-5 dark:border-zinc-800 sm:px-6">
           <div className={cn("flex items-start justify-between gap-4", isRtl && "flex-row-reverse")}>

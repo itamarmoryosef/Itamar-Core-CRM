@@ -142,7 +142,7 @@ export default function AdminTeamPage() {
             <code className="text-xs">profiles_team.sql</code>).
           </p>
           <Link
-            href="/admin"
+            href="/admin/clients"
             className="mt-4 inline-block text-sm font-medium text-amber-950 underline dark:text-amber-100"
           >
             חזרה ללוח הבקרה

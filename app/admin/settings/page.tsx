@@ -15,6 +15,7 @@ import {
   Rows3,
   Save,
   Send,
+  Sparkles,
   Tags,
   Trash2,
   Users,
@@ -34,6 +35,8 @@ import {
   sanitizeOriginalFilenameForDb,
   timestampedStorageObjectName,
 } from "@/lib/storageKey";
+import { resolveAdminOrganizationId, setSuperActiveOrganizationId } from "@/lib/orgContextClient";
+import type { AdminMeResponse } from "@/app/api/admin/me/route";
 
 type DocumentTypeRow = {
   id: string;
@@ -85,6 +88,7 @@ type TeamMemberRow = {
 };
 
 type SettingsRubricKey =
+  | "branding"
   | "notifications"
   | "reminders"
   | "leads"
@@ -165,12 +169,79 @@ export default function AdminSettingsPage() {
   const [editCommissionPct, setEditCommissionPct] = useState("");
   const [teamSaveBusy, setTeamSaveBusy] = useState(false);
   const [activeRubric, setActiveRubric] =
-    useState<SettingsRubricKey>("notifications");
+    useState<SettingsRubricKey>("branding");
+
+  const [brandBusinessName, setBrandBusinessName] = useState("");
+  const [brandTagline, setBrandTagline] = useState("");
+  const [brandPrimary, setBrandPrimary] = useState("");
+  const [brandSecondary, setBrandSecondary] = useState("");
+  const [brandLogoUrl, setBrandLogoUrl] = useState("");
+  const [brandSaving, setBrandSaving] = useState(false);
+
+  const [me, setMe] = useState<AdminMeResponse | null>(null);
+  const [meLoadDone, setMeLoadDone] = useState(false);
+  const [allOrgs, setAllOrgs] = useState<
+    { id: string; name: string; slug: string }[] | null
+  >(null);
+  const [activeOrgId, setActiveOrgId] = useState<string | null>(null);
+
+  useEffect(() => {
+    let c = false;
+    void (async () => {
+      const res = await fetch("/api/admin/me", { credentials: "include" });
+      if (!res.ok) {
+        if (!c) setMeLoadDone(true);
+        return;
+      }
+      const data = (await res.json()) as AdminMeResponse;
+      if (c) return;
+      setMe(data);
+      if (data.platformSuper) {
+        const ores = await fetch("/api/super/organizations", { credentials: "include" });
+        if (ores.ok) {
+          const oj = (await ores.json()) as {
+            organizations: { id: string; name: string; slug: string }[];
+          };
+          setAllOrgs(oj.organizations);
+          setActiveOrgId(
+            resolveAdminOrganizationId(
+              { platformSuper: true, organizationId: data.organizationId },
+              oj.organizations
+            ) ?? data.organizationId
+          );
+        } else {
+          setAllOrgs([]);
+          setActiveOrgId(data.organizationId);
+        }
+      } else {
+        setAllOrgs(null);
+        setActiveOrgId(data.organizationId);
+      }
+      setMeLoadDone(true);
+    })();
+    return () => {
+      c = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    const h = window.location.hash?.replace(/^#/, "");
+    if (
+      h === "branding" ||
+      h === "notifications" ||
+      h === "reminders" ||
+      h === "leads" ||
+      h === "docTypes" ||
+      h === "templates" ||
+      h === "team"
+    ) {
+      setActiveRubric(h);
+      return;
+    }
     const saved = window.localStorage.getItem("admin-settings-active-rubric");
     if (
+      saved === "branding" ||
       saved === "notifications" ||
       saved === "reminders" ||
       saved === "leads" ||
@@ -254,6 +325,11 @@ export default function AdminSettingsPage() {
         grow_payment_base_url?: string;
         client_crm_statuses?: string[];
         client_crm_bot_enabled_statuses?: string[];
+        branding_business_name?: string;
+        branding_tagline?: string;
+        branding_primary?: string;
+        branding_secondary?: string;
+        branding_logo_url?: string;
         error?: string;
       };
       if (!res.ok) {
@@ -275,6 +351,11 @@ export default function AdminSettingsPage() {
         statuses
       );
       setBotEnabledStatuses(botStatuses);
+      setBrandBusinessName(data.branding_business_name ?? "");
+      setBrandTagline(data.branding_tagline ?? "");
+      setBrandPrimary(data.branding_primary ?? "");
+      setBrandSecondary(data.branding_secondary ?? "");
+      setBrandLogoUrl(data.branding_logo_url ?? "");
     } catch {
       setPhoneLoadError("שגיאת רשת");
     } finally {
@@ -337,12 +418,26 @@ export default function AdminSettingsPage() {
   }, [loadDocumentTypes]);
 
   const loadLeadProviders = useCallback(async () => {
+    if (!meLoadDone) return;
     setLeadProvidersLoading(true);
     setLeadProvidersError(null);
-    const { data, error } = await supabase
+    const baseQ = supabase
       .from("lead_providers")
       .select("id, name, phone, commission_percent, created_at")
       .order("name", { ascending: true });
+    const first =
+      activeOrgId != null
+        ? await baseQ.eq("organization_id", activeOrgId)
+        : await baseQ;
+    let { data, error } = first;
+    if (error && activeOrgId && /column|schema/i.test(error.message)) {
+      const fb = await supabase
+        .from("lead_providers")
+        .select("id, name, phone, commission_percent, created_at")
+        .order("name", { ascending: true });
+      data = fb.data;
+      error = fb.error;
+    }
     setLeadProvidersLoading(false);
     if (error) {
       setLeadProviders([]);
@@ -350,7 +445,7 @@ export default function AdminSettingsPage() {
       return;
     }
     setLeadProviders((data ?? []) as LeadProviderRow[]);
-  }, []);
+  }, [activeOrgId, meLoadDone]);
 
   useEffect(() => {
     void loadLeadProviders();
@@ -502,11 +597,16 @@ export default function AdminSettingsPage() {
       });
       return;
     }
+    if (!activeOrgId) {
+      setToast({ type: "error", message: "לא הוגדר ארגון. רענן או בחר ארגון." });
+      return;
+    }
     setLeadProviderBusy(true);
     const { error: insErr } = await supabase.from("lead_providers").insert({
       name,
       phone,
       commission_percent,
+      organization_id: activeOrgId,
     });
     setLeadProviderBusy(false);
     if (insErr) {
@@ -544,6 +644,39 @@ export default function AdminSettingsPage() {
     }
     setToast({ type: "success", message: "הספק נמחק." });
     void loadLeadProviders();
+  };
+
+  const handleSaveBranding = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setBrandSaving(true);
+    try {
+      const res = await fetch("/api/admin/settings", {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          branding_business_name: brandBusinessName,
+          branding_tagline: brandTagline,
+          branding_primary: brandPrimary,
+          branding_secondary: brandSecondary,
+          branding_logo_url: brandLogoUrl,
+        }),
+      });
+      const data = (await res.json()) as { error?: string };
+      if (!res.ok) {
+        setToast({ type: "error", message: data.error ?? "שמירת מיתוג נכשלה" });
+        return;
+      }
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event("crm-branding-updated"));
+        window.dispatchEvent(new Event("alentix-branding-updated"));
+      }
+      setToast({ type: "success", message: "המיתוג נשמור. הממשקים הפתוחים יתעדכנו בלי רענון מלא." });
+    } catch {
+      setToast({ type: "error", message: "שגיאת רשת" });
+    } finally {
+      setBrandSaving(false);
+    }
   };
 
   const handleSavePhone = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -823,11 +956,11 @@ export default function AdminSettingsPage() {
   };
 
   const cardClass =
-    "rounded-xl border border-slate-200/70 bg-white p-5 shadow-sm dark:border-neutral-700 dark:bg-neutral-900";
+    "rounded-xl border border-slate-100 bg-white p-5 shadow-sm";
   const btnPrimary =
-    "inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:pointer-events-none disabled:opacity-50 dark:bg-indigo-500 dark:hover:bg-indigo-600";
+    "inline-flex items-center justify-center gap-2 rounded-lg bg-brand px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-90 disabled:pointer-events-none disabled:opacity-50";
   const btnSecondary =
-    "inline-flex items-center justify-center gap-2 rounded-lg border border-neutral-300 bg-white px-4 py-2.5 text-sm font-medium text-neutral-800 shadow-sm hover:bg-neutral-50 disabled:pointer-events-none disabled:opacity-50 dark:border-neutral-600 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800";
+    "inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-neutral-800 shadow-sm hover:bg-slate-50 disabled:pointer-events-none disabled:opacity-50";
   const embedCodes = [
     { code: "[[full_name]]", label: "שם מלא" },
     { code: "[[id_number]]", label: "תעודת זהות" },
@@ -959,6 +1092,7 @@ export default function AdminSettingsPage() {
         <div className="rounded-2xl border border-neutral-200/80 bg-white p-3 shadow-sm dark:border-neutral-800 dark:bg-neutral-900/90">
           <div className="flex flex-wrap gap-2">
             {([
+              ["branding", "מיתוג"],
               ["notifications", "התראות"],
               ["reminders", "תזכורות"],
               ["leads", "ספקי לידים"],
@@ -972,8 +1106,8 @@ export default function AdminSettingsPage() {
                 onClick={() => setActiveRubric(key)}
                 className={`rounded-xl px-3 py-2 text-sm font-semibold transition ${
                   activeRubric === key
-                    ? "bg-indigo-600 text-white shadow-sm"
-                    : "border border-neutral-200 bg-neutral-50 text-neutral-700 hover:bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"
+                    ? "bg-brand text-white shadow-sm"
+                    : "border border-slate-200 bg-slate-50 text-neutral-700 hover:bg-slate-100"
                 }`}
               >
                 {label}
@@ -982,21 +1116,125 @@ export default function AdminSettingsPage() {
           </div>
         </div>
 
-        <p className="text-start text-sm text-neutral-600 dark:text-neutral-300">
-          <Link
-            href="/admin/settings/whatsapp"
-            className="font-semibold text-emerald-700 underline-offset-2 hover:underline dark:text-emerald-400"
-          >
-            חיבור WhatsApp (שירות נפרד) — סריקת QR ו-Pairing
-          </Link>
+        <p className="text-start text-sm text-neutral-600">
+          <span className="me-2 inline">
+            <Link
+              href="/admin/settings/fields"
+              className="font-semibold text-brand underline-offset-2 hover:underline"
+            >
+              שדות מותאמים אישית
+            </Link>
+          </span>
+          <span className="text-neutral-400">|</span>
+          <span className="ms-2 inline">
+            <Link
+              href="/admin/settings/whatsapp"
+              className="font-semibold text-emerald-700 underline-offset-2 hover:underline"
+            >
+              חיבור WhatsApp (שירות נפרד) — סריקת QR ו-Pairing
+            </Link>
+          </span>
         </p>
 
         <div className="grid gap-6 lg:grid-cols-2 lg:gap-8">
+          {activeRubric === "branding" ? (
+            <section
+              id="branding"
+              className={cardClass + " lg:col-span-2"}
+              aria-labelledby="branding-h"
+            >
+              <div className="flex items-center gap-2">
+                <Sparkles
+                  className="h-5 w-5 shrink-0 text-brand"
+                  aria-hidden
+                />
+                <h2
+                  id="branding-h"
+                  className="text-start text-base font-semibold text-neutral-900"
+                >
+                  מותג ומראה
+                </h2>
+              </div>
+              <p className="mt-2 text-start text-sm text-neutral-600">
+                הערכים כאן נשמרים במסד (טבלת <code className="rounded bg-neutral-100 px-1">settings</code>
+                ) ומוצגים בפורטל הלקוח, ב־PDF ובהודעות WhatsApp. אם שדה ריק — נעשה שימוש ב־<code className="rounded bg-neutral-100 px-1">NEXT_PUBLIC_*</code> מההטמעה.
+              </p>
+              <form
+                onSubmit={(e) => void handleSaveBranding(e)}
+                className="mt-4 grid gap-4 sm:grid-cols-2"
+              >
+                <label className="grid gap-1.5 text-start text-sm sm:col-span-2">
+                  <span className="font-medium text-neutral-800 dark:text-neutral-200">שם עסק / מותג</span>
+                  <input
+                    type="text"
+                    value={brandBusinessName}
+                    onChange={(e) => setBrandBusinessName(e.target.value)}
+                    className="rounded-lg border border-neutral-300 bg-neutral-50/80 px-3 py-2 text-neutral-900 dark:border-neutral-600 dark:bg-neutral-950 dark:text-neutral-100"
+                    placeholder="שם העסק"
+                    autoComplete="organization"
+                  />
+                </label>
+                <label className="grid gap-1.5 text-start text-sm sm:col-span-2">
+                  <span className="font-medium text-neutral-800 dark:text-neutral-200">שורת משנה (תת־כותרת)</span>
+                  <input
+                    type="text"
+                    value={brandTagline}
+                    onChange={(e) => setBrandTagline(e.target.value)}
+                    className="rounded-lg border border-neutral-300 bg-neutral-50/80 px-3 py-2 text-neutral-900 dark:border-neutral-600 dark:bg-neutral-950 dark:text-neutral-100"
+                  />
+                </label>
+                <label className="grid gap-1.5 text-start text-sm">
+                  <span className="font-medium text-neutral-800 dark:text-neutral-200">צבע ראשי (hex)</span>
+                  <input
+                    type="text"
+                    dir="ltr"
+                    value={brandPrimary}
+                    onChange={(e) => setBrandPrimary(e.target.value)}
+                    className="rounded-lg border border-neutral-300 bg-neutral-50/80 px-3 py-2 text-neutral-900 dark:border-neutral-600 dark:bg-neutral-950 dark:text-neutral-100"
+                    placeholder="#0f172a"
+                  />
+                </label>
+                <label className="grid gap-1.5 text-start text-sm">
+                  <span className="font-medium text-neutral-800 dark:text-neutral-200">צבע משני (hex)</span>
+                  <input
+                    type="text"
+                    dir="ltr"
+                    value={brandSecondary}
+                    onChange={(e) => setBrandSecondary(e.target.value)}
+                    className="rounded-lg border border-neutral-300 bg-neutral-50/80 px-3 py-2 text-neutral-900 dark:border-neutral-600 dark:bg-neutral-950 dark:text-neutral-100"
+                    placeholder="#2563eb"
+                  />
+                </label>
+                <label className="grid gap-1.5 text-start text-sm sm:col-span-2">
+                  <span className="font-medium text-neutral-800 dark:text-neutral-200">URL ללוגו (אופציונלי)</span>
+                  <input
+                    type="url"
+                    dir="ltr"
+                    value={brandLogoUrl}
+                    onChange={(e) => setBrandLogoUrl(e.target.value)}
+                    className="rounded-lg border border-neutral-300 bg-neutral-50/80 px-3 py-2 text-neutral-900 dark:border-neutral-600 dark:bg-neutral-950 dark:text-neutral-100"
+                    placeholder="https://…/logo.png"
+                  />
+                </label>
+                <div className="sm:col-span-2">
+                  <button
+                    type="submit"
+                    disabled={brandSaving}
+                    className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white shadow-sm hover:opacity-90 disabled:opacity-50"
+                  >
+                    {brandSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                    שמור מיתוג
+                  </button>
+                </div>
+              </form>
+            </section>
+          ) : null}
+
           {activeRubric === "notifications" ? (
-          <section className={cardClass} aria-labelledby="notif-phone-h">
+          <section id="notifications" className={cardClass} aria-labelledby="notif-phone-h">
             <div className="flex items-center gap-2">
               <Bell
-                className="h-5 w-5 shrink-0 text-indigo-600 dark:text-indigo-400"
+                className="h-5 w-5 shrink-0 text-brand"
                 aria-hidden
               />
               <h2
@@ -1055,6 +1293,24 @@ export default function AdminSettingsPage() {
                     className="rounded-lg border border-neutral-300 bg-neutral-50/80 px-3 py-2 text-neutral-900 dark:border-neutral-600 dark:bg-neutral-950 dark:text-neutral-100"
                   />
                 </label>
+                <div className="rounded-xl border border-brand-soft bg-brand-soft p-4 text-start">
+                  <h3 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+                    שלבי ה־CRM (מזהי UUID)
+                  </h3>
+                  <p className="mt-1 text-xs text-neutral-600 dark:text-neutral-400">
+                    מקור האמת לתצוגה ולכרטיס לקוח: טבלת{" "}
+                    <code className="rounded bg-white/90 px-1 font-mono text-[11px] dark:bg-neutral-900/90">client_statuses</code>
+                    . ניתן לנהל צבעים, סדר, בוט ו־<code className="font-mono">is_active</code>{" "}
+                    במסך הייעודי.
+                  </p>
+                  <Link
+                    href="/admin/settings/statuses"
+                    className="mt-3 inline-flex w-full min-h-10 items-center justify-center gap-2 rounded-lg bg-brand px-4 text-sm font-semibold text-white shadow-sm hover:opacity-90"
+                  >
+                    <Tags className="h-4 w-4 shrink-0" aria-hidden />
+                    ניהול סטטוסים ובוט
+                  </Link>
+                </div>
                 <label className="grid gap-1.5 text-start text-sm">
                   <span className="font-medium text-neutral-800 dark:text-neutral-200">
                     סטטוסי לקוח לבחירה (שורה לכל סטטוס)
@@ -1085,7 +1341,7 @@ export default function AdminSettingsPage() {
                     <button
                       type="button"
                       onClick={addCustomStatus}
-                      className="inline-flex min-h-10 items-center justify-center rounded-lg border border-indigo-300 bg-indigo-50 px-3 text-sm font-semibold text-indigo-800 hover:bg-indigo-100 dark:border-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-200 dark:hover:bg-indigo-950/70"
+                      className="inline-flex min-h-10 items-center justify-center rounded-lg border border-brand-soft bg-brand-soft px-3 text-sm font-semibold text-neutral-900 hover:bg-brand-soft"
                     >
                       הוסף סטטוס
                     </button>
@@ -1142,7 +1398,7 @@ export default function AdminSettingsPage() {
                                 return prev.filter((s) => s !== status);
                               });
                             }}
-                            className="h-4 w-4 rounded border-neutral-400 text-indigo-600 focus:ring-indigo-500"
+                            className="h-4 w-4 rounded border-neutral-400 text-brand ring-brand focus:ring-2"
                             aria-label={`שליחת בוט לסטטוס ${status}`}
                           />
                         </label>
@@ -1169,7 +1425,7 @@ export default function AdminSettingsPage() {
           <section className={cardClass} aria-labelledby="cron-reminders-h">
             <div className="flex items-center gap-2">
               <Clock
-                className="h-5 w-5 shrink-0 text-indigo-600 dark:text-indigo-400"
+                className="h-5 w-5 shrink-0 text-brand"
                 aria-hidden
               />
               <h2
@@ -1188,7 +1444,7 @@ export default function AdminSettingsPage() {
               type="button"
               disabled={reminderTriggerBusy}
               onClick={() => void runRemindersNow()}
-              className="mt-4 inline-flex h-9 min-h-9 items-center gap-2 rounded-lg bg-indigo-600 px-3 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50 dark:bg-indigo-500 dark:hover:bg-indigo-600"
+              className="mt-4 inline-flex h-9 min-h-9 items-center gap-2 rounded-lg bg-brand px-3 text-sm font-semibold text-white shadow-sm hover:opacity-90 disabled:opacity-50"
             >
               {reminderTriggerBusy ? (
                 <Loader2 className="h-4 w-4 shrink-0 animate-spin" aria-hidden />
@@ -1204,7 +1460,7 @@ export default function AdminSettingsPage() {
           <section className={cardClass} aria-labelledby="lead-providers-h">
             <div className="flex items-center gap-2">
               <Users
-                className="h-5 w-5 shrink-0 text-indigo-600 dark:text-indigo-400"
+                className="h-5 w-5 shrink-0 text-brand"
                 aria-hidden
               />
               <h2
@@ -1214,6 +1470,35 @@ export default function AdminSettingsPage() {
                 ספקי לידים
               </h2>
             </div>
+
+            {me?.platformSuper && (allOrgs?.length ?? 0) > 0 ? (
+              <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50/90 px-3 py-2 text-sm dark:border-amber-800 dark:bg-amber-950/30">
+                <label className="flex flex-wrap items-center gap-2">
+                  <span className="font-medium text-amber-950 dark:text-amber-100">
+                    ארגון
+                  </span>
+                  <select
+                    className="min-w-[12rem] rounded border border-amber-300 bg-white px-2 py-1 text-sm dark:border-amber-700 dark:bg-slate-900"
+                    value={activeOrgId ?? ""}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setActiveOrgId(v || null);
+                      setSuperActiveOrganizationId(v || null);
+                    }}
+                  >
+                    {(allOrgs ?? []).map((o) => (
+                      <option key={o.id} value={o.id}>
+                        {o.name} ({o.slug})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            ) : me && me.organization && !me.platformSuper ? (
+              <p className="mt-2 text-start text-sm text-neutral-500">
+                ארגון: {me.organization.name} ({me.organization.slug})
+              </p>
+            ) : null}
 
             {leadProvidersLoading ? (
               <div className="mt-6 flex items-center gap-2 text-neutral-600 dark:text-neutral-400">
@@ -1318,7 +1603,7 @@ export default function AdminSettingsPage() {
           <section className={cardClass} aria-labelledby="doc-types-h">
             <div className="flex items-center gap-2">
               <FileText
-                className="h-5 w-5 shrink-0 text-indigo-600 dark:text-indigo-400"
+                className="h-5 w-5 shrink-0 text-brand"
                 aria-hidden
               />
               <h2
@@ -1707,7 +1992,7 @@ export default function AdminSettingsPage() {
           <section className={cardClass} aria-labelledby="embed-codes-h">
             <div className="flex items-center gap-2">
               <FileType
-                className="h-5 w-5 shrink-0 text-indigo-600 dark:text-indigo-400"
+                className="h-5 w-5 shrink-0 text-brand"
                 aria-hidden
               />
               <h2
@@ -1734,7 +2019,7 @@ export default function AdminSettingsPage() {
                   </span>
                   <code
                     dir="ltr"
-                    className="rounded bg-white px-2 py-1 text-xs font-semibold text-indigo-700 dark:bg-neutral-900 dark:text-indigo-300"
+                    className="rounded bg-white px-2 py-1 text-xs font-semibold text-brand"
                   >
                     {item.code}
                   </code>
@@ -1753,7 +2038,7 @@ export default function AdminSettingsPage() {
           >
             <div className="flex items-center gap-2">
               <Users
-                className="h-5 w-5 shrink-0 text-indigo-600 dark:text-indigo-400"
+                className="h-5 w-5 shrink-0 text-brand"
                 aria-hidden
               />
               <h2
@@ -1806,7 +2091,7 @@ export default function AdminSettingsPage() {
                     <button
                       type="button"
                       onClick={() => openEditUser(m)}
-                      className="inline-flex h-9 min-h-9 w-full items-center justify-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 text-sm font-semibold text-indigo-800 shadow-sm transition hover:border-indigo-300 hover:bg-indigo-100 md:w-auto md:min-w-9 md:px-0 dark:border-indigo-900/60 dark:bg-indigo-950/50 dark:text-indigo-200 dark:hover:bg-indigo-950/80"
+                      className="inline-flex h-9 min-h-9 w-full items-center justify-center gap-2 rounded-lg border border-brand-soft bg-brand-soft px-3 text-sm font-semibold text-neutral-900 shadow-sm transition hover:opacity-95 md:w-auto md:min-w-9 md:px-0"
                       aria-label={`עריכת ${m.full_name?.trim() || m.email}`}
                       title="עריכה"
                     >
@@ -1818,7 +2103,7 @@ export default function AdminSettingsPage() {
                 <p className="mt-4 text-start text-sm text-neutral-600 dark:text-neutral-400">
                   <Link
                     href="/admin/team"
-                    className="font-semibold text-indigo-600 underline-offset-2 hover:underline dark:text-indigo-400"
+                    className="font-semibold text-brand underline-offset-2 hover:underline"
                   >
                     הוספת חבר צוות חדש
                   </Link>
@@ -1842,7 +2127,7 @@ export default function AdminSettingsPage() {
                     aria-labelledby="edit-user-title"
                     className="w-full max-w-md overflow-hidden rounded-2xl border border-neutral-200/80 bg-white shadow-xl dark:border-neutral-700 dark:bg-neutral-900"
                   >
-                    <div className="border-b border-neutral-200 bg-gradient-to-l from-indigo-50/90 to-white px-5 py-4 dark:border-neutral-700 dark:from-indigo-950/40 dark:to-neutral-900">
+                    <div className="border-b border-slate-100 bg-gradient-to-l from-brand-soft to-white px-5 py-4">
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <h2
@@ -1878,7 +2163,7 @@ export default function AdminSettingsPage() {
                           value={editFullName}
                           onChange={(e) => setEditFullName(e.target.value)}
                           autoComplete="name"
-                          className="rounded-lg border border-neutral-300 bg-neutral-50/80 px-3 py-2.5 text-neutral-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:border-neutral-600 dark:bg-neutral-950 dark:text-neutral-100"
+                          className="rounded-lg border border-neutral-300 bg-neutral-50/80 px-3 py-2.5 text-neutral-900 shadow-sm focus:border-brand-soft focus:outline-none focus:ring-2 ring-brand dark:border-neutral-600 dark:bg-neutral-950 dark:text-neutral-100"
                         />
                       </label>
                       <label className="grid gap-1.5 text-start text-sm">
@@ -1892,7 +2177,7 @@ export default function AdminSettingsPage() {
                           onChange={(e) => setEditEmail(e.target.value)}
                           autoComplete="email"
                           required
-                          className="rounded-lg border border-neutral-300 bg-neutral-50/80 px-3 py-2.5 text-neutral-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:border-neutral-600 dark:bg-neutral-950 dark:text-neutral-100"
+                          className="rounded-lg border border-neutral-300 bg-neutral-50/80 px-3 py-2.5 text-neutral-900 shadow-sm focus:border-brand-soft focus:outline-none focus:ring-2 ring-brand dark:border-neutral-600 dark:bg-neutral-950 dark:text-neutral-100"
                         />
                       </label>
                       <label className="grid gap-1.5 text-start text-sm">
@@ -1906,7 +2191,7 @@ export default function AdminSettingsPage() {
                               e.target.value === "admin" ? "admin" : "staff"
                             )
                           }
-                          className="rounded-lg border border-neutral-300 bg-neutral-50/80 px-3 py-2.5 text-neutral-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:border-neutral-600 dark:bg-neutral-950 dark:text-neutral-100"
+                          className="rounded-lg border border-neutral-300 bg-neutral-50/80 px-3 py-2.5 text-neutral-900 shadow-sm focus:border-brand-soft focus:outline-none focus:ring-2 ring-brand dark:border-neutral-600 dark:bg-neutral-950 dark:text-neutral-100"
                         >
                           <option value="staff">צוות</option>
                           <option value="admin">מנהל</option>
@@ -1924,7 +2209,7 @@ export default function AdminSettingsPage() {
                           dir="ltr"
                           value={editCommissionPct}
                           onChange={(e) => setEditCommissionPct(e.target.value)}
-                          className="rounded-lg border border-neutral-300 bg-neutral-50/80 px-3 py-2.5 text-neutral-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:border-neutral-600 dark:bg-neutral-950 dark:text-neutral-100"
+                          className="rounded-lg border border-neutral-300 bg-neutral-50/80 px-3 py-2.5 text-neutral-900 shadow-sm focus:border-brand-soft focus:outline-none focus:ring-2 ring-brand dark:border-neutral-600 dark:bg-neutral-950 dark:text-neutral-100"
                         />
                       </label>
                       <label className="grid gap-1.5 text-start text-sm">
@@ -1938,7 +2223,7 @@ export default function AdminSettingsPage() {
                           value={editNewPassword}
                           onChange={(e) => setEditNewPassword(e.target.value)}
                           placeholder="השאר ריק אם אין שינוי"
-                          className="rounded-lg border border-neutral-300 bg-neutral-50/80 px-3 py-2.5 text-neutral-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:border-neutral-600 dark:bg-neutral-950 dark:text-neutral-100"
+                          className="rounded-lg border border-neutral-300 bg-neutral-50/80 px-3 py-2.5 text-neutral-900 shadow-sm focus:border-brand-soft focus:outline-none focus:ring-2 ring-brand dark:border-neutral-600 dark:bg-neutral-950 dark:text-neutral-100"
                         />
                       </label>
                       <div className="flex flex-wrap gap-2 border-t border-neutral-100 pt-4 dark:border-neutral-800">

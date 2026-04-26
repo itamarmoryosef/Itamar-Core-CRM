@@ -8,8 +8,8 @@ import { ensureClientShortId } from "@/lib/ensureClientShortId";
 import {
   whatsappPortalLinkFromShortIdWithMode,
 } from "@/lib/appUrls";
-import { businessName } from "@/lib/branding";
 import { isWhatsAppConfigured, sendWhatsAppTextMessage } from "@/lib/whatsappSend";
+import { getResolvedBranding } from "@/lib/brandingResolve";
 import {
   clientAllowsAutomatedReminders,
   CLIENT_CRM_STATUS_DEFAULT,
@@ -21,6 +21,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSettingValue } from "@/lib/settingsServer";
 import {
   SETTING_KEY_CLIENT_CRM_BOT_ENABLED_STATUSES,
+  SETTING_KEY_CLIENT_CRM_BOT_ENABLED_STATUS_IDS,
   SETTING_KEY_CLIENT_CRM_STATUSES,
 } from "@/lib/settingsKeys";
 
@@ -28,6 +29,38 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
 const ISRAEL_TIMEZONE = "Asia/Jerusalem";
+
+function parseBotEnabledStatusIdsFromSettings(
+  raw: string | null | undefined
+): Set<string> {
+  if (!raw?.trim()) return new Set();
+  try {
+    const p = JSON.parse(raw) as unknown;
+    if (!Array.isArray(p)) return new Set();
+    return new Set(
+      p
+        .filter((x): x is string => typeof x === "string")
+        .map((s) => s.trim())
+        .filter(Boolean)
+    );
+  } catch {
+    return new Set();
+  }
+}
+
+/** Prefer `client_statuses` UUIDs from settings when configured; else label list. */
+function clientMatchesBotCrmTarget(
+  row: { status?: string | null; status_id?: string | null },
+  labelSet: Set<string>,
+  idSet: Set<string>
+): boolean {
+  if (idSet.size > 0) {
+    const sid = row.status_id?.trim();
+    if (sid) return idSet.has(sid);
+  }
+  const crmStatus = row.status?.trim() || CLIENT_CRM_STATUS_DEFAULT;
+  return labelSet.has(crmStatus);
+}
 
 /** Wall clock in Israel: used to avoid automated cron sends on Shabbat / at night. Admin UI WhatsApp routes are unaffected. */
 function getIsraelWeekdayAndHour(now: Date): { weekdayShort: string; hour: number } {
@@ -62,9 +95,9 @@ function cronSupabase(): SupabaseClient {
 
 function buildDocumentReminderMessage(
   fullName: string,
-  portalLink: string
+  portalLink: string,
+  org: string
 ): string {
-  const org = businessName();
   return [
     `שלום ${fullName},`,
     "",
@@ -191,6 +224,7 @@ export async function GET(request: Request) {
   }
 
   try {
+    const orgBrand = (await getResolvedBranding()).businessName;
     const nowMs = Date.now();
     /** UTC ISO string for DB compares (`lte` on timestamptz) and stored timestamps */
     const nowIso = new Date(nowMs).toISOString();
@@ -207,6 +241,12 @@ export async function GET(request: Request) {
       )) ?? "";
     const botEnabledStatusSet = new Set(
       parseBotEnabledClientCrmStatuses(botEnabledStatusesRaw, crmStatuses)
+    );
+    const botEnabledIdSet = parseBotEnabledStatusIdsFromSettings(
+      (await getSettingValue(
+        supabase,
+        SETTING_KEY_CLIENT_CRM_BOT_ENABLED_STATUS_IDS
+      )) ?? ""
     );
 
     let scheduledProcessed = 0;
@@ -345,7 +385,7 @@ export async function GET(request: Request) {
     const { data: manualDueClients, error: manualDueErr } = await supabase
       .from("clients")
       .select(
-        "id, full_name, phone, short_id, status, reminder_mode, next_custom_reminder, upload_request_active"
+        "id, full_name, phone, short_id, status, status_id, reminder_mode, next_custom_reminder, upload_request_active"
       )
       .eq("reminder_mode", "manual")
       .eq("upload_request_active", true)
@@ -377,10 +417,13 @@ export async function GET(request: Request) {
       );
     } else if (manualDueClients && manualDueClients.length > 0) {
       for (const client of manualDueClients) {
-        const crmStatus =
-          (client as { status?: string | null }).status?.trim() ||
-          CLIENT_CRM_STATUS_DEFAULT;
-        if (!botEnabledStatusSet.has(crmStatus)) {
+        if (
+          !clientMatchesBotCrmTarget(
+            client as { status?: string | null; status_id?: string | null },
+            botEnabledStatusSet,
+            botEnabledIdSet
+          )
+        ) {
           manualSkippedCrm += 1;
           continue;
         }
@@ -419,7 +462,11 @@ export async function GET(request: Request) {
         const fullName = String(
           (client as { full_name?: string | null }).full_name ?? "לקוח"
         );
-        const message = buildDocumentReminderMessage(fullName, portalLink);
+        const message = buildDocumentReminderMessage(
+          fullName,
+          portalLink,
+          orgBrand
+        );
 
         console.log(
           "Sending scheduled message to:",
@@ -507,10 +554,13 @@ export async function GET(request: Request) {
       ) {
         return false;
       }
-      const crmStatus =
-        (c as { status?: string | null }).status?.trim() ||
-        CLIENT_CRM_STATUS_DEFAULT;
-      if (!botEnabledStatusSet.has(crmStatus)) {
+      if (
+        !clientMatchesBotCrmTarget(
+          c as { status?: string | null; status_id?: string | null },
+          botEnabledStatusSet,
+          botEnabledIdSet
+        )
+      ) {
         return false;
       }
       return isDocReminderDue(
@@ -550,9 +600,13 @@ export async function GET(request: Request) {
     );
 
     const actionableClients = due.filter((c) => {
-      const row = c as { status?: string | null };
-      const crmStatus = row.status?.trim() || CLIENT_CRM_STATUS_DEFAULT;
-      if (!botEnabledStatusSet.has(crmStatus)) {
+      if (
+        !clientMatchesBotCrmTarget(
+          c as { status?: string | null; status_id?: string | null },
+          botEnabledStatusSet,
+          botEnabledIdSet
+        )
+      ) {
         return false;
       }
       const hasSigned = c.has_signed === true;
@@ -595,7 +649,8 @@ export async function GET(request: Request) {
       }
       const message = buildDocumentReminderMessage(
         String(c.full_name ?? "לקוח"),
-        portalLink
+        portalLink,
+        orgBrand
       );
 
       const ok = await sendWhatsAppTextMessage({

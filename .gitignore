@@ -37,6 +37,9 @@ yarn-error.log*
 # vercel
 .vercel
 
+# local export (integrated; do not commit)
+/status-system-export/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

@@ -57,6 +57,8 @@ export async function buildSignedDeclarationPdf(opts: {
   signedAt?: Date;
   /** From `clients.agreement_notes` — office notes shown before signature in PDF */
   agreementNotes?: string | null;
+  brandName?: string;
+  brandTagline?: string;
 }): Promise<Blob | null> {
   const html = opts.agreementHtml?.trim() ?? "";
   const sig = opts.signatureDataUrl?.trim() ?? "";
@@ -78,8 +80,8 @@ export async function buildSignedDeclarationPdf(opts: {
       signatureDataUrl={sig}
       signedAt={signedAt}
       agreementNotes={opts.agreementNotes}
-      brandName={publicBusinessName()}
-      brandTagline={publicBusinessTagline()}
+      brandName={opts.brandName ?? publicBusinessName()}
+      brandTagline={opts.brandTagline ?? publicBusinessTagline()}
     />
   );
 
@@ -92,6 +94,8 @@ export async function buildAgreementPreviewPdf(opts: {
   idNumber: string;
   agreementHtml: string;
   agreementNotes?: string | null;
+  brandName?: string;
+  brandTagline?: string;
 }): Promise<Blob> {
   await ensureDeclarationPdfFonts();
 
@@ -102,8 +106,8 @@ export async function buildAgreementPreviewPdf(opts: {
       idNumber={opts.idNumber}
       paragraphs={paragraphs}
       agreementNotes={opts.agreementNotes}
-      brandName={publicBusinessName()}
-      brandTagline={publicBusinessTagline()}
+      brandName={opts.brandName ?? publicBusinessName()}
+      brandTagline={opts.brandTagline ?? publicBusinessTagline()}
     />
   );
 

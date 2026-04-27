@@ -2189,8 +2189,12 @@ export default function AdminCrmLayoutBuilderPage() {
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
     >
-      <div className="min-h-screen bg-slate-50 dark:bg-neutral-950" dir="rtl">
-        <aside className="fixed top-16 z-20 hidden max-h-[calc(100dvh-5rem)] w-48 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-1.5 shadow-sm lg:block xl:top-20 start-3 xl:start-6 dark:border-slate-800 dark:bg-slate-950">
+      <div className="min-h-0" dir="rtl">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:gap-5">
+        <aside
+          aria-label="רכיבים לגרירה"
+          className="hidden w-full max-h-[40vh] shrink-0 flex-col overflow-y-auto rounded-xl border border-slate-200 bg-slate-50/95 p-2 shadow-sm dark:border-slate-800 dark:bg-slate-950/80 lg:sticky lg:top-16 lg:order-1 lg:flex lg:max-h-[min(72vh,calc(100dvh-6rem))] lg:w-52"
+        >
           <div className="space-y-1">
             {CRM_CORE_FIELD_KEYS.map((key) => (
               <DraggablePaletteCoreChip
@@ -2213,7 +2217,7 @@ export default function AdminCrmLayoutBuilderPage() {
           ) : null}
         </aside>
 
-      <div className="mx-auto max-w-5xl space-y-4 px-2 pb-16 pt-4 lg:pe-56 lg:ps-4">
+      <div className="min-w-0 flex-1 space-y-4 py-0 lg:order-2">
         {toast ? (
           <div
             role="status"
@@ -2237,7 +2241,17 @@ export default function AdminCrmLayoutBuilderPage() {
               פריסת כרטיס
             </h1>
           </div>
-          <div className="flex flex-wrap gap-3">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+            {layoutDirty && !slotsTableMissing ? (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void saveLayoutDraft()}
+                className={`${minimalistPrimaryClass} h-9 shrink-0 font-semibold disabled:opacity-50`}
+              >
+                שמור שינויים
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={() => setPreviewOpen((v) => !v)}
@@ -2773,6 +2787,7 @@ export default function AdminCrmLayoutBuilderPage() {
           </div>
         )}
       </div>
+        </div>
 
       {dividerModalSlotId ? (
         <DividerConfigModal
@@ -2826,18 +2841,6 @@ export default function AdminCrmLayoutBuilderPage() {
               );
             })()}
           </div>
-        </div>
-      ) : null}
-      {layoutDirty && !slotsTableMissing ? (
-        <div className="pointer-events-none fixed inset-x-0 bottom-6 z-[45] flex justify-center px-4">
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => void saveLayoutDraft()}
-            className={`pointer-events-auto ${minimalistPrimaryClass} rounded-xl px-5 py-2.5 text-sm font-semibold shadow-lg`}
-          >
-            שמור שינויים
-          </button>
         </div>
       ) : null}
       <DragOverlay dropAnimation={null} style={{ cursor: "grabbing" }}>

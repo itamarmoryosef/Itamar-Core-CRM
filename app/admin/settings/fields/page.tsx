@@ -515,9 +515,15 @@ export default function CustomFieldsSettingsPage() {
           <p className="text-xs font-medium uppercase tracking-wide text-brand">
             {brandEyebrow}
           </p>
-          <h1 className="text-start text-2xl font-bold tracking-tight">שדות מותאמים אישית</h1>
+          <h1 className="text-start text-2xl font-bold tracking-tight">רשימת שדות (מתקדם)</h1>
           <p className="mt-1 max-w-2xl text-start text-sm text-slate-600 dark:text-slate-300">
-            הגדירו קבוצות (סקשנים) ושדות דינמיים. ה־slug נשמר ב־JSON של הלקוח (
+            <Link
+              className="font-semibold text-brand hover:underline"
+              href="/admin/settings/layout"
+            >
+              הוספה מומלצת: שדות + רשת בלחיצה
+            </Link>
+            . כאן: קבוצות, טבלה, ייבוא. ה־slug נשמר ב־JSON של הלקוח (
             <code className="rounded bg-slate-200/80 px-1 dark:bg-slate-800">custom_fields_data</code>
             ) ובמסמכי Word — קוד שתילה{" "}
             <code className="rounded bg-slate-200/80 px-1 [direction:ltr] text-left dark:bg-slate-800">
@@ -541,7 +547,7 @@ export default function CustomFieldsSettingsPage() {
             className="inline-flex items-center gap-1.5 rounded-lg border border-brand-soft bg-brand-soft px-3 py-2 text-sm font-medium text-neutral-900 hover:opacity-95"
           >
             <LayoutGrid className="h-4 w-4" aria-hidden />
-            פריסת לוח
+            בוני שדות ורשת
           </Link>
         </div>
       </div>

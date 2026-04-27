@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   normalizeCrmLayoutSlotRow,
+  normalizeCrmLayoutSlots,
   type CrmLayoutSlotRow,
 } from "@/lib/crmClientCardLayout";
 
@@ -85,6 +86,49 @@ export function layoutSlotsDirty(
 
 export function newLocalSlotId(): string {
   return `local-${crypto.randomUUID()}`;
+}
+
+/**
+ * `loadAll` for DBs without `crm_layout_slots` only rebuilds from
+ * `legacySlotsFromDefinitions` (customs with DB placement). In-memory
+ * work (core, dividers, `local-*` slots) must survive a refetch.
+ */
+export function mergeLegacyBaseWithInMemoryBuilderSlots(
+  base: CrmLayoutSlotRow[],
+  previous: CrmLayoutSlotRow[]
+): CrmLayoutSlotRow[] {
+  if (previous.length === 0) return base;
+
+  const fromPrev = previous.filter(
+    (p) =>
+      p.slot_kind === "core" ||
+      p.slot_kind === "divider" ||
+      p.id.startsWith("local-")
+  );
+  const defIdsFromLocal = new Set(
+    fromPrev
+      .filter(
+        (p) =>
+          p.slot_kind === "custom" && p.id.startsWith("local-") && p.definition_id
+      )
+      .map((p) => p.definition_id as string)
+  );
+  const basePruned = base.filter(
+    (b) =>
+      !(
+        b.slot_kind === "custom" &&
+        b.definition_id &&
+        defIdsFromLocal.has(b.definition_id)
+      )
+  );
+  const seen = new Set<string>();
+  const out: CrmLayoutSlotRow[] = [];
+  for (const s of [...basePruned, ...fromPrev]) {
+    if (seen.has(s.id)) continue;
+    seen.add(s.id);
+    out.push(s);
+  }
+  return normalizeCrmLayoutSlots(out);
 }
 
 /** Move or insert-active into target row before optional overSlotId. */

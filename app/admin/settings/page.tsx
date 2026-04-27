@@ -244,8 +244,10 @@ export default function AdminSettingsPage() {
       { href: "/admin/settings/messages", label: "תבניות הודעות" },
       { href: "/admin/settings/whatsapp", label: "חיבור WhatsApp" },
       { href: "/admin/settings/statuses", label: "ניהול סטטוסים" },
-      { href: "/admin/settings/fields", label: "שדות מותאמים" },
-      { href: "/admin/settings/layout", label: "פריסת כרטיס" },
+      {
+        href: "/admin/settings/layout",
+        label: "שדות ופריסת כרטיס",
+      },
       { href: "/admin/settings/templates", label: "עורך טפסי פורטל" },
     ];
     return u;

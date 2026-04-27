@@ -108,18 +108,18 @@ export function SettingsHubGrid({ onPickRubric, enabledFeatureCodes }: Props) {
             href="/admin/settings/statuses"
           />
           <SettingsModuleCard
-            title="שדות מותאמים"
-            description="הגדרת שאלות, סוגי שדות, חישובים — לשימוש בכרטיס ופורטל."
+            title="שדות ופריסת כרטיס"
+            description="הוספת שדה בלחיצה (למטה בבניית הרשת), שם, קוד שתילה אוטומטי, גרירה — כמו «יועצים»."
+            icon={LayoutGrid}
+            cta="פתח בוני כרטיס"
+            href="/admin/settings/layout"
+          />
+          <SettingsModuleCard
+            title="רשימת שדות וייבוא"
+            description="טבלה, ייבוא משדות ממסמך, עריכה מרוכזת — להשלמה."
             icon={ListTree}
             cta="פתח"
             href="/admin/settings/fields"
-          />
-          <SettingsModuleCard
-            title="פריסת כרטיס"
-            description="אזורים, בלוקים, סדר — בונה UI של כרטיס הלקוח."
-            icon={LayoutGrid}
-            cta="פתח"
-            href="/admin/settings/layout"
           />
         </div>
       </div>

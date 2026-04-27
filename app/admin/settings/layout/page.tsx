@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
   type Dispatch,
+  type FormEvent,
   type ReactNode,
   type SetStateAction,
 } from "react";
@@ -32,12 +33,15 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import {
   ChevronDown,
+  Copy,
   Eye,
   GripVertical,
+  Info,
   LayoutGrid,
   Loader2,
   Minus,
   Plus,
+  SlidersHorizontal,
   Trash2,
   X,
 } from "lucide-react";
@@ -47,8 +51,8 @@ import { invalidateAdminClientGlobalCatalog } from "@/lib/adminClientGlobalCatal
 import { supabase } from "@/lib/supabase";
 import {
   crmAdminColumnSpanToGrid12,
+  crmFieldTypeHebrewLabel,
   normalizeCrmFieldType,
-  type CrmFieldType,
 } from "@/lib/crmFieldLayout";
 import {
   CRM_CORE_FIELD_KEYS,
@@ -67,7 +71,9 @@ import {
   buildCrmLayoutSlotInsertRow,
   canPlaceSpanInRow,
   cloneLayoutSlots,
+  clampLayoutColumnSpan,
   layoutSlotsDirty,
+  mergeLegacyBaseWithInMemoryBuilderSlots,
   moveSlotInDraft,
   newLocalSlotId,
   persistCrmLayoutSlotsBulk,
@@ -76,6 +82,14 @@ import {
 } from "@/lib/crmLayoutDraft";
 import { fetchCrmLayoutSlotsResilient } from "@/lib/fetchCrmLayoutSlots";
 import { getLayoutSectionsTableName } from "@/lib/layoutSectionsTable";
+import { useAdminSession } from "@/lib/adminSessionContext";
+import {
+  customFieldWordPlaceholder,
+  ensureUniqueCustomFieldSlug,
+  normalizeCustomFieldSlugInput,
+  suggestSlugFromLabel,
+} from "@/lib/customFieldsTemplate";
+import type { CrmFieldType } from "@/lib/crmFieldLayout";
 
 type SectionRow = {
   id: string;
@@ -167,6 +181,7 @@ function DividerDesignerChip(props: {
   previewConfig: CrmDividerConfig;
   onEdit: () => void;
   onRemove: () => void;
+  onOpenInspector?: () => void;
   dragListeners?: Record<string, unknown>;
   disableDrag?: boolean;
 }) {
@@ -176,6 +191,7 @@ function DividerDesignerChip(props: {
     previewConfig,
     onEdit,
     onRemove,
+    onOpenInspector,
     dragListeners,
     disableDrag,
   } = props;
@@ -190,9 +206,13 @@ function DividerDesignerChip(props: {
       >
         <GripVertical className="h-3 w-3 shrink-0" />
       </button>
-      <div className="min-w-0 flex-1">
+      <button
+        type="button"
+        onClick={() => onOpenInspector?.()}
+        className="min-w-0 flex-1 text-start"
+      >
         <CrmLayoutDividerView config={previewConfig} variant="designer" />
-      </div>
+      </button>
       <button
         type="button"
         disabled={busy}
@@ -381,21 +401,34 @@ function CanvasCustomFieldChipInner(props: {
   field: CustomFieldRow;
   slot: CrmLayoutSlotRow;
   busy: boolean;
+  onSelectForInspector: () => void;
   onRemoveFromLayout: () => void;
   onCycleSpan: () => void;
 }) {
-  const { field, slot, busy, onRemoveFromLayout, onCycleSpan } = props;
+  const { field, slot, busy, onSelectForInspector, onRemoveFromLayout, onCycleSpan } =
+    props;
   return (
     <CanvasFieldShell>
-      <Link
-        href="/admin/settings/fields"
-        onClick={(e) => e.stopPropagation()}
-        onPointerDown={(e) => e.stopPropagation()}
-        className="min-w-0 flex-1 truncate text-start text-xs font-medium text-sky-950 hover:underline dark:text-sky-100"
-        title="עריכת הגדרות שדה במסך «שדות»"
-      >
-        {field.label?.trim() ? field.label : "שדה"}
-      </Link>
+      <div className="min-w-0 flex-1 text-start text-xs">
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onSelectForInspector();
+          }}
+          className="block w-full truncate text-start font-medium text-sky-950 dark:text-sky-100"
+        >
+          {field.label?.trim() ? field.label : "שדה"}
+        </button>
+        <Link
+          href="/admin/settings/fields"
+          onClick={(e) => e.stopPropagation()}
+          onPointerDown={(e) => e.stopPropagation()}
+          className="text-[9px] font-medium text-sky-700/90 underline-offset-1 hover:underline"
+        >
+          עריכת שדה…
+        </Link>
+      </div>
       <button
         type="button"
         disabled={busy}
@@ -429,15 +462,24 @@ const CoreFieldCanvasChip = memo(function CoreFieldCanvasChipInner(props: {
   coreKey: CrmCoreFieldKey;
   busy: boolean;
   columnSpan: number;
+  onSelectForInspector: () => void;
   onCycleSpan: () => void;
   onRemove: () => void;
 }) {
-  const { coreKey, busy, columnSpan, onCycleSpan, onRemove } = props;
+  const { coreKey, busy, columnSpan, onSelectForInspector, onCycleSpan, onRemove } =
+    props;
   return (
     <CanvasFieldShell>
-      <div className="min-w-0 flex-1 truncate text-start text-xs font-medium text-sky-950 dark:text-sky-100">
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          onSelectForInspector();
+        }}
+        className="min-w-0 flex-1 truncate text-start text-xs font-medium text-sky-950 dark:text-sky-100"
+      >
         {labelForCoreKey(coreKey)}
-      </div>
+      </button>
       <button
         type="button"
         disabled={busy}
@@ -793,12 +835,36 @@ function syncCustomFieldAfterSlotMove(
   );
 }
 
+const quickAddGreenBtnClass =
+  "inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-emerald-700/30 bg-emerald-600 px-2.5 py-1.5 text-xs font-bold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-45";
+
+const QUICK_ADDABLE_TYPES: CrmFieldType[] = [
+  "text",
+  "number",
+  "date",
+  "select",
+  "calculation",
+];
+
 export default function AdminCrmLayoutBuilderPage() {
+  const adminSess = useAdminSession();
+  const activeOrgId = adminSess?.activeOrganization?.id?.trim() ?? null;
+
   const [sections, setSections] = useState<SectionRow[]>([]);
   const [fields, setFields] = useState<CustomFieldRow[]>([]);
   const [draftSlots, setDraftSlots] = useState<CrmLayoutSlotRow[]>([]);
   const [committedSlots, setCommittedSlots] = useState<CrmLayoutSlotRow[]>([]);
   const [slotsTableMissing, setSlotsTableMissing] = useState(false);
+  /** `crm_layout_slots` table unavailable (or relation error) — no save / no draft persist. */
+  const [slotTableFetchFailed, setSlotTableFetchFailed] = useState(false);
+  const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null);
+  const [quickAddType, setQuickAddType] = useState<CrmFieldType | null>(null);
+  const [quickAddLabel, setQuickAddLabel] = useState("");
+  const [quickAddOptions, setQuickAddOptions] = useState("");
+  const [quickAddFormula, setQuickAddFormula] = useState("");
+  const [quickAddSaving, setQuickAddSaving] = useState(false);
+  const committedSlotsRef = useRef(committedSlots);
+  const draftSlotsRef = useRef(draftSlots);
   const seedSlotsAttemptedRef = useRef(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -878,7 +944,14 @@ export default function AdminCrmLayoutBuilderPage() {
     []
   );
 
-  const loadAll = useCallback(async () => {
+  useEffect(() => {
+    committedSlotsRef.current = committedSlots;
+  }, [committedSlots]);
+  useEffect(() => {
+    draftSlotsRef.current = draftSlots;
+  }, [draftSlots]);
+
+  const loadAll = useCallback(async (opts?: { forceResetDraft?: boolean }) => {
     setLoading(true);
     setError(null);
     const sectionsTable = await getLayoutSectionsTableName(supabase);
@@ -891,13 +964,17 @@ export default function AdminCrmLayoutBuilderPage() {
       setLoading(false);
       return;
     }
-    const { data: fRows, error: fErr } = await supabase
+    let defQ = supabase
       .from("custom_field_definitions")
       .select(
         "id, label, slug, field_type, section_id, row_number, column_span, sort_order, options, formula"
       )
       .order("row_number", { ascending: true })
       .order("sort_order", { ascending: true });
+    if (activeOrgId) {
+      defQ = defQ.eq("organization_id", activeOrgId);
+    }
+    const { data: fRows, error: fErr } = await defQ;
     if (fErr) {
       setError(fErr.message);
       setLoading(false);
@@ -915,14 +992,29 @@ export default function AdminCrmLayoutBuilderPage() {
 
     const slotErr = slotFetchErr ? { message: slotFetchErr } : null;
     const layoutSchemaIncomplete = slotsSchemaLevel === "legacy_no_span";
+    setSlotTableFetchFailed(!!slotErr);
+    setSlotsTableMissing(!!slotErr || layoutSchemaIncomplete);
+
+    const preserveLayoutDraft =
+      !opts?.forceResetDraft &&
+      layoutSlotsDirty(
+        committedSlotsRef.current,
+        draftSlotsRef.current
+      );
 
     if (slotErr) {
-      setSlotsTableMissing(true);
+      if (preserveLayoutDraft) {
+        setLoading(false);
+        return;
+      }
       const leg = normalizeCrmLayoutSlots(legacySlotsFromDefinitions(defs));
-      setDraftSlots(cloneLayoutSlots(leg));
-      setCommittedSlots(cloneLayoutSlots(leg));
+      const merged = mergeLegacyBaseWithInMemoryBuilderSlots(
+        leg,
+        draftSlotsRef.current
+      );
+      setDraftSlots(cloneLayoutSlots(merged));
+      setCommittedSlots(cloneLayoutSlots(merged));
     } else {
-      setSlotsTableMissing(layoutSchemaIncomplete);
       let slots = slotRows;
       const placed = defs.filter((d) => d.section_id != null);
       if (
@@ -948,11 +1040,15 @@ export default function AdminCrmLayoutBuilderPage() {
           .from("crm_layout_slots")
           .insert(inserts);
         if (!insErr) {
-          void loadAll();
+          void loadAll({ forceResetDraft: true });
           return;
         }
         seedSlotsAttemptedRef.current = false;
         slots = legacySlotsFromDefinitions(defs);
+      }
+      if (preserveLayoutDraft) {
+        setLoading(false);
+        return;
       }
       const next = normalizeCrmLayoutSlots(
         slots.length > 0 ? slots : legacySlotsFromDefinitions(defs)
@@ -963,7 +1059,7 @@ export default function AdminCrmLayoutBuilderPage() {
     }
 
     setLoading(false);
-  }, []);
+  }, [activeOrgId]);
 
   useEffect(() => {
     void loadAll();
@@ -990,9 +1086,8 @@ export default function AdminCrmLayoutBuilderPage() {
   }, [sortedSections]);
 
   const layoutDirty = useMemo(
-    () =>
-      !slotsTableMissing && layoutSlotsDirty(committedSlots, draftSlots),
-    [slotsTableMissing, committedSlots, draftSlots]
+    () => layoutSlotsDirty(committedSlots, draftSlots),
+    [committedSlots, draftSlots]
   );
 
   const slottedDefIds = useMemo(() => {
@@ -1044,6 +1139,157 @@ export default function AdminCrmLayoutBuilderPage() {
     },
     [rowsForSection, pendingRowBySection]
   );
+
+  const openQuickAdd = (t: CrmFieldType) => {
+    setQuickAddType(t);
+    setQuickAddLabel(
+      t === "calculation"
+        ? "חישוב"
+        : `שדה — ${crmFieldTypeHebrewLabel(t)}`
+    );
+    setQuickAddOptions("");
+    setQuickAddFormula("");
+  };
+
+  const handleQuickAddSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!quickAddType) return;
+    if (!activeOrgId) {
+      setToast({
+        type: "error",
+        message: "חסר ארגון. בחרו ארגון בראש המסוף.",
+      });
+      return;
+    }
+    if (slotTableFetchFailed) {
+      setToast({
+        type: "error",
+        message: "הריצו ב-Supabase את add_crm_layout_slots.sql",
+      });
+      return;
+    }
+    if (sortedSections.length === 0) {
+      setToast({
+        type: "error",
+        message: "הוסיפו מודול (אזור) — «מודול חדש» מעל הרשת.",
+      });
+      return;
+    }
+    const label = quickAddLabel.trim();
+    if (!label) {
+      setToast({ type: "error", message: "נא שם לשדה" });
+      return;
+    }
+    if (quickAddType === "select" && !quickAddOptions.trim()) {
+      setToast({ type: "error", message: "לרשימה — הזינו אפשרות בכל שורה" });
+      return;
+    }
+    const secId = toolbarTargetSectionId ?? sortedSections[0]!.id;
+    const display = getRowNumbersToDisplay(secId);
+    const rowNum =
+      pendingRowBySection[secId] ?? display[display.length - 1] ?? 1;
+    if (!canPlaceSpanInRow(draftSlots, secId, rowNum, 4, null)) {
+      setToast({
+        type: "error",
+        message: "השורה מלאה (עד 12 עמודות). הוסיפו שורה או צמצמו רכיבים.",
+      });
+      return;
+    }
+    const inRow = draftSlots.filter(
+      (s) => s.section_id === secId && s.row_number === rowNum
+    );
+    const sort_order =
+      inRow.length === 0
+        ? 0
+        : Math.max(...inRow.map((s) => s.sort_order)) + 1;
+    const basis = normalizeCustomFieldSlugInput(
+      suggestSlugFromLabel(label) || "field"
+    );
+    const slug = ensureUniqueCustomFieldSlug(
+      basis && basis.length >= 2 ? basis : "field",
+      allSlugsLower
+    );
+    const optionsLines = quickAddOptions
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean);
+    const optionsPayload = quickAddType === "select" ? optionsLines : [];
+    setQuickAddSaving(true);
+    const field_type: CrmFieldType = quickAddType;
+    const baseRow = {
+      label,
+      slug,
+      field_type,
+      section_id: secId,
+      row_number: rowNum,
+      column_span: 4,
+      sort_order,
+      options: optionsPayload,
+      organization_id: activeOrgId,
+    } as const;
+    const insertPayload: Record<string, unknown> =
+      field_type === "calculation" && quickAddFormula.trim()
+        ? { ...baseRow, formula: quickAddFormula.trim() }
+        : { ...baseRow, formula: null };
+    let { data: newRow, error: insErr } = await supabase
+      .from("custom_field_definitions")
+      .insert(insertPayload)
+      .select("*")
+      .single();
+    let usedCalculationFallback = false;
+    if (insErr && field_type === "calculation") {
+      const { data: d2, error: e2 } = await supabase
+        .from("custom_field_definitions")
+        .insert({
+          ...baseRow,
+          field_type: "text" as const,
+          formula: null,
+        })
+        .select("*")
+        .single();
+      if (!e2) {
+        newRow = d2;
+        insErr = null;
+        usedCalculationFallback = true;
+      } else {
+        newRow = null;
+      }
+    }
+    if (insErr) {
+      setQuickAddSaving(false);
+      setToast({ type: "error", message: insErr.message });
+      return;
+    }
+    if (!newRow) {
+      setQuickAddSaving(false);
+      return;
+    }
+    const asDef = newRow as CustomFieldRow;
+    setFields((prev) => [...prev, asDef]);
+    const newSlot: CrmLayoutSlotRow = {
+      id: newLocalSlotId(),
+      section_id: secId,
+      row_number: rowNum,
+      column_span: 4,
+      sort_order,
+      slot_kind: "custom",
+      core_key: null,
+      definition_id: asDef.id,
+    };
+    setDraftSlots((d) => [...d, newSlot]);
+    setSelectedSlotId(newSlot.id);
+    setToolbarTargetSectionId(secId);
+    setQuickAddType(null);
+    setQuickAddSaving(false);
+    setToast({
+      type: "success",
+      message: usedCalculationFallback
+        ? "נשמר כשדה טקסט (המסד בלי 'calculation'). " +
+          `קוד שתילה: ${customFieldWordPlaceholder(slug)}`
+        : `השדה הוגדר ונמוקם ברשת. קוד שתילה: ${customFieldWordPlaceholder(slug)} (מסמכים/מיזוג)`,
+    });
+    invalidateAdminClientGlobalCatalog();
+  };
 
   const addSection = async () => {
     const title = newSectionTitle.trim();
@@ -1140,7 +1386,7 @@ export default function AdminCrmLayoutBuilderPage() {
   };
 
   const addDividerToToolbarTarget = () => {
-    if (slotsTableMissing) {
+    if (slotTableFetchFailed) {
       setToast({
         type: "error",
         message: "הריצו ב-Supabase את add_crm_layout_slots.sql",
@@ -1194,91 +1440,76 @@ export default function AdminCrmLayoutBuilderPage() {
       rowNum = Math.max(1, parseInt(assignRowChoice, 10) || 1);
     }
 
-    if (!slotsTableMissing) {
-      let next = draftSlots;
-      const existingSlot = next.find(
-        (s) =>
-          s.definition_id === assignFieldId && s.slot_kind === "custom"
-      );
-      if (existingSlot) {
-        next = moveSlotInDraft(
-          next,
-          existingSlot.id,
-          assignSectionId,
-          rowNum,
-          null
-        );
-      } else {
-        const inRow = next.filter(
-          (s) => s.section_id === assignSectionId && s.row_number === rowNum
-        );
-        const sort_order =
-          inRow.length === 0
-            ? 0
-            : Math.max(...inRow.map((s) => s.sort_order)) + 1;
-        next = [
-          ...next,
-          {
-            id: newLocalSlotId(),
-            section_id: assignSectionId,
-            row_number: rowNum,
-            column_span: 4,
-            sort_order,
-            slot_kind: "custom" as const,
-            core_key: null,
-            definition_id: assignFieldId,
-          },
-        ];
-      }
-      setDraftSlots(next);
-      const sr = next.find((s) => s.definition_id === assignFieldId)!;
-      setFields((prev) =>
-        prev.map((f) =>
-          f.id === assignFieldId
-            ? {
-                ...f,
-                section_id: sr.section_id,
-                row_number: sr.row_number,
-                sort_order: sr.sort_order,
-                column_span: sr.column_span,
-              }
-            : f
-        )
-      );
-      setAssignFieldId(null);
-      setAssignSectionId("");
-      setAssignRowChoice("__new__");
-      return;
-    }
-
-    const inRowSl = draftSlots.filter(
-      (s) => s.section_id === assignSectionId && s.row_number === rowNum
+    let next = draftSlots;
+    const existingSlot = next.find(
+      (s) =>
+        s.definition_id === assignFieldId && s.slot_kind === "custom"
     );
-    const sort_order =
-      inRowSl.length === 0
-        ? 0
-        : Math.max(...inRowSl.map((s) => s.sort_order)) + 1;
-
-    setBusy(true);
-    const { error: e } = await supabase
-      .from("custom_field_definitions")
-      .update({
-        section_id: assignSectionId,
-        row_number: rowNum,
-        sort_order,
-        column_span: 4,
-      })
-      .eq("id", assignFieldId);
-    setBusy(false);
-    if (e) {
-      setToast({ type: "error", message: e.message });
-      return;
+    if (existingSlot) {
+      next = moveSlotInDraft(
+        next,
+        existingSlot.id,
+        assignSectionId,
+        rowNum,
+        null
+      );
+    } else {
+      const inRow = next.filter(
+        (s) => s.section_id === assignSectionId && s.row_number === rowNum
+      );
+      const sort_order =
+        inRow.length === 0
+          ? 0
+          : Math.max(...inRow.map((s) => s.sort_order)) + 1;
+      next = [
+        ...next,
+        {
+          id: newLocalSlotId(),
+          section_id: assignSectionId,
+          row_number: rowNum,
+          column_span: 4,
+          sort_order,
+          slot_kind: "custom" as const,
+          core_key: null,
+          definition_id: assignFieldId,
+        },
+      ];
+    }
+    setDraftSlots(next);
+    const sr = next.find((s) => s.definition_id === assignFieldId)!;
+    setFields((prev) =>
+      prev.map((f) =>
+        f.id === assignFieldId
+          ? {
+              ...f,
+              section_id: sr.section_id,
+              row_number: sr.row_number,
+              sort_order: sr.sort_order,
+              column_span: sr.column_span,
+            }
+          : f
+      )
+    );
+    if (slotTableFetchFailed) {
+      setBusy(true);
+      const { error: e } = await supabase
+        .from("custom_field_definitions")
+        .update({
+          section_id: assignSectionId,
+          row_number: rowNum,
+          sort_order: sr.sort_order,
+          column_span: sr.column_span,
+        })
+        .eq("id", assignFieldId);
+      setBusy(false);
+      if (e) {
+        setToast({ type: "error", message: e.message });
+        return;
+      }
     }
     setAssignFieldId(null);
     setAssignSectionId("");
     setAssignRowChoice("__new__");
-    setToast({ type: "success", message: "שויך לסקשן" });
-    void loadAll();
   };
 
   const fieldById = useMemo(() => {
@@ -1286,6 +1517,19 @@ export default function AdminCrmLayoutBuilderPage() {
     for (const f of fields) m.set(f.id, f);
     return m;
   }, [fields]);
+
+  const allSlugsLower = useMemo(
+    () => new Set(fields.map((f) => f.slug.toLowerCase())),
+    [fields]
+  );
+
+  const selectedLayoutSlot = useMemo(
+    () =>
+      selectedSlotId
+        ? draftSlots.find((s) => s.id === selectedSlotId) ?? null
+        : null,
+    [selectedSlotId, draftSlots]
+  );
 
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
   const sensors = useSensors(
@@ -1329,7 +1573,7 @@ export default function AdminCrmLayoutBuilderPage() {
   );
 
   const saveLayoutDraft = useCallback(async () => {
-    if (slotsTableMissing || !layoutDirty) return;
+    if (slotTableFetchFailed || !layoutDirty) return;
     setBusy(true);
     const res = await persistCrmLayoutSlotsBulk(
       supabase,
@@ -1344,9 +1588,9 @@ export default function AdminCrmLayoutBuilderPage() {
     setToast({ type: "success", message: "הפריסה נשמרה" });
     setBusy(false);
     invalidateAdminClientGlobalCatalog();
-    await loadAll();
+    await loadAll({ forceResetDraft: true });
   }, [
-    slotsTableMissing,
+    slotTableFetchFailed,
     layoutDirty,
     committedSlots,
     draftSlots,
@@ -1550,6 +1794,44 @@ export default function AdminCrmLayoutBuilderPage() {
     [resolveDropTarget, pendingRowBySection, setFields]
   );
 
+  const setSlotColumnSpan = useCallback(
+    async (slot: CrmLayoutSlotRow, rawSpan: number) => {
+      if (slot.id.startsWith("legacy-")) return;
+      if (slot.slot_kind === "divider") return;
+      const next = clampLayoutColumnSpan(rawSpan);
+      setDraftSlots((d) =>
+        d.map((s) => (s.id === slot.id ? { ...s, column_span: next } : s))
+      );
+      if (slot.definition_id) {
+        setFields((prev) =>
+          prev.map((f) =>
+            f.id === slot.definition_id
+              ? { ...f, column_span: next }
+              : f
+          )
+        );
+      }
+      if (slotTableFetchFailed && slot.definition_id) {
+        setBusy(true);
+        const { error: e } = await supabase
+          .from("custom_field_definitions")
+          .update({ column_span: next })
+          .eq("id", slot.definition_id);
+        setBusy(false);
+        if (e) setToast({ type: "error", message: e.message });
+      }
+    },
+    [slotTableFetchFailed]
+  );
+
+  const cycleSlotSpan = async (slot: CrmLayoutSlotRow) => {
+    if (slot.id.startsWith("legacy-") || slot.slot_kind === "divider")
+      return;
+    const c = slot.column_span;
+    const n = c >= 4 ? 1 : c + 1;
+    await setSlotColumnSpan(slot, n);
+  };
+
   const removeLayoutSlot = async (
     slot: CrmLayoutSlotRow,
     opts?: { skipConfirm?: boolean }
@@ -1561,75 +1843,38 @@ export default function AdminCrmLayoutBuilderPage() {
       });
       return;
     }
-    if (!slotsTableMissing) {
-      if (!opts?.skipConfirm && !window.confirm("להסיר מהלוח?")) return;
-      setDraftSlots((d) => d.filter((s) => s.id !== slot.id));
-      if (slot.slot_kind === "custom" && slot.definition_id) {
-        setFields((prev) =>
-          prev.map((f) =>
-            f.id === slot.definition_id
-              ? {
-                  ...f,
-                  section_id: null,
-                  row_number: 1,
-                  sort_order: 0,
-                  column_span: 4,
-                }
-              : f
-          )
-        );
-      }
-      return;
-    }
     if (!opts?.skipConfirm && !window.confirm("להסיר מהלוח?")) return;
-    setBusy(true);
-    await supabase.from("crm_layout_slots").delete().eq("id", slot.id);
+    if (selectedSlotId === slot.id) setSelectedSlotId(null);
+    setDraftSlots((d) => d.filter((s) => s.id !== slot.id));
     if (slot.slot_kind === "custom" && slot.definition_id) {
-      await supabase
-        .from("custom_field_definitions")
-        .update({
-          section_id: null,
-          row_number: 1,
-          sort_order: 0,
-          column_span: 4,
-        })
-        .eq("id", slot.definition_id);
-    }
-    setBusy(false);
-    void loadAll();
-  };
-
-  const cycleSlotSpan = async (slot: CrmLayoutSlotRow) => {
-    if (slot.id.startsWith("legacy-")) return;
-    if (slot.slot_kind === "divider") return;
-    if (!slotsTableMissing) {
-      const next = slot.column_span >= 4 ? 1 : slot.column_span + 1;
-      setDraftSlots((d) =>
-        d.map((s) => (s.id === slot.id ? { ...s, column_span: next } : s))
+      setFields((prev) =>
+        prev.map((f) =>
+          f.id === slot.definition_id
+            ? {
+                ...f,
+                section_id: null,
+                row_number: 1,
+                sort_order: 0,
+                column_span: 4,
+              }
+            : f
+        )
       );
-      if (slot.definition_id) {
-        setFields((prev) =>
-          prev.map((f) =>
-            f.id === slot.definition_id ? { ...f, column_span: next } : f
-          )
-        );
+      if (slotTableFetchFailed) {
+        setBusy(true);
+        const { error: e } = await supabase
+          .from("custom_field_definitions")
+          .update({
+            section_id: null,
+            row_number: 1,
+            sort_order: 0,
+            column_span: 4,
+          })
+          .eq("id", slot.definition_id);
+        setBusy(false);
+        if (e) setToast({ type: "error", message: e.message });
       }
-      return;
     }
-    const next = slot.column_span >= 4 ? 1 : slot.column_span + 1;
-    setBusy(true);
-    await supabase
-      .from("crm_layout_slots")
-      .update({ column_span: next })
-      .eq("id", slot.id);
-    if (slot.definition_id) {
-      await supabase
-        .from("custom_field_definitions")
-        .update({ column_span: next })
-        .eq("id", slot.definition_id);
-    }
-    setBusy(false);
-    void loadAll();
   };
 
   const renderPreview = () => (
@@ -1739,21 +1984,22 @@ export default function AdminCrmLayoutBuilderPage() {
               ← הגדרות
             </Link>
             <h1 className="mt-1 text-start text-sm font-bold text-slate-900 dark:text-slate-50">
-              פריסת כרטיס
+              שדות ופריסת כרטיס
             </h1>
             <p className="mt-1 text-start text-[11px] text-slate-500">
-              הוספה או שינוי מטא-שדה:{" "}
+              הוספת שדה: כפתורי <strong className="text-slate-600 dark:text-slate-300">+</strong> הירוקים
+              — שם, קוד שתילה אוטומטי, מיקום שורה. ייבוא ממסמך /טבלה מרוכזת:{" "}
               <Link
                 href="/admin/settings/fields"
                 className="font-medium text-brand hover:underline"
               >
-                שדות
+                רשימה וייבוא
               </Link>
-              . בלמטה: ספריית גרירה, מודולים ומפריד.
+              .
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-            {layoutDirty && !slotsTableMissing ? (
+            {layoutDirty && !slotTableFetchFailed ? (
               <button
                 type="button"
                 disabled={busy}
@@ -1804,9 +2050,12 @@ export default function AdminCrmLayoutBuilderPage() {
           <>
           <div
             className={
-              previewOpen ? "grid gap-4 lg:grid-cols-2 lg:items-start" : ""
+              previewOpen
+                ? "grid gap-4 lg:grid-cols-2 lg:items-start"
+                : "grid grid-cols-1 gap-4 lg:grid-cols-[1fr_16rem] lg:items-start"
             }
           >
+            <div className="min-w-0">
             <div className={canvasShellClass}>
               <div className="flex flex-wrap items-center gap-2">
                 <input
@@ -1840,7 +2089,7 @@ export default function AdminCrmLayoutBuilderPage() {
                       <div className="flex flex-wrap items-center gap-2">
                         <input
                           defaultValue={sec.title}
-                          key={`t-${sec.id}-${sec.title}`}
+                          key={`t-${sec.id}`}
                           onBlur={(e) => {
                             if (e.target.value.trim() !== sec.title) {
                               void renameSection(sec.id, e.target.value);
@@ -1930,6 +2179,12 @@ export default function AdminCrmLayoutBuilderPage() {
                                           coreKey={ck}
                                           busy={busy}
                                           columnSpan={sl.column_span}
+                                          onSelectForInspector={() => {
+                                            setSelectedSlotId(sl.id);
+                                            setToolbarTargetSectionId(
+                                              sec.id
+                                            );
+                                          }}
                                           onCycleSpan={() =>
                                             void cycleSlotSpan(sl)
                                           }
@@ -1985,6 +2240,12 @@ export default function AdminCrmLayoutBuilderPage() {
                                                 busy={busy}
                                                 previewConfig={divCfg}
                                                 disableDrag
+                                                onOpenInspector={() => {
+                                                  setSelectedSlotId(sl.id);
+                                                  setToolbarTargetSectionId(
+                                                    sec.id
+                                                  );
+                                                }}
                                                 onEdit={() =>
                                                   setDividerModalSlotId(
                                                     sl.id
@@ -2014,6 +2275,12 @@ export default function AdminCrmLayoutBuilderPage() {
                                               busy={busy}
                                               previewConfig={divCfg}
                                               dragListeners={listeners}
+                                              onOpenInspector={() => {
+                                                setSelectedSlotId(sl.id);
+                                                setToolbarTargetSectionId(
+                                                  sec.id
+                                                );
+                                              }}
                                               onEdit={() =>
                                                 setDividerModalSlotId(sl.id)
                                               }
@@ -2045,6 +2312,12 @@ export default function AdminCrmLayoutBuilderPage() {
                                               field={f}
                                               slot={sl}
                                               busy={busy}
+                                              onSelectForInspector={() => {
+                                                setSelectedSlotId(sl.id);
+                                                setToolbarTargetSectionId(
+                                                  sec.id
+                                                );
+                                              }}
                                               onRemoveFromLayout={() =>
                                                 void removeLayoutSlot(sl, {
                                                   skipConfirm: true,
@@ -2070,6 +2343,12 @@ export default function AdminCrmLayoutBuilderPage() {
                                             field={f}
                                             slot={sl}
                                             busy={busy}
+                                            onSelectForInspector={() => {
+                                              setSelectedSlotId(sl.id);
+                                              setToolbarTargetSectionId(
+                                                sec.id
+                                              );
+                                            }}
                                             onRemoveFromLayout={() =>
                                               void removeLayoutSlot(sl, {
                                                 skipConfirm: true,
@@ -2094,6 +2373,122 @@ export default function AdminCrmLayoutBuilderPage() {
               })}
               </div>
             </div>
+            </div>
+
+            {!previewOpen ? (
+              <aside className="lg:sticky lg:top-4 h-fit w-full min-w-0 self-start rounded-2xl border border-slate-200/90 bg-white p-3 text-start shadow-sm dark:border-slate-700 dark:bg-slate-900/80">
+                <div className="mb-2 flex items-center gap-1.5 border-b border-slate-100 pb-2 text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:border-slate-800">
+                  <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden />
+                  מאפייני רכיב
+                </div>
+                {selectedLayoutSlot ? (
+                  <div className="space-y-3 text-start text-xs">
+                    {selectedLayoutSlot.slot_kind === "core" &&
+                    selectedLayoutSlot.core_key ? (
+                      <>
+                        <p className="text-[10px] font-medium text-slate-500">
+                          {labelForCoreKey(selectedLayoutSlot.core_key)}
+                        </p>
+                        <p className="text-[10px] text-slate-600 dark:text-slate-400">
+                          שדה מובנה. גלילת רוחב: עמודות 1–12 ברשת הכרטיס.
+                        </p>
+                      </>
+                    ) : null}
+                    {selectedLayoutSlot.slot_kind === "divider" ? (
+                      <>
+                        <p className="font-medium text-slate-800 dark:text-slate-100">
+                          מפריד
+                        </p>
+                        <p className="text-[10px] text-slate-600">
+                          {normalizeDividerConfig(
+                            selectedLayoutSlot.divider_config
+                          ).title || "ללא כותרת"}
+                        </p>
+                        <button
+                          type="button"
+                          className={`${minimalistPrimaryClass} w-full justify-center text-[10px]`}
+                          onClick={() =>
+                            setDividerModalSlotId(selectedLayoutSlot.id)
+                          }
+                        >
+                          עריכת עיצוב
+                        </button>
+                      </>
+                    ) : null}
+                    {selectedLayoutSlot.slot_kind === "custom" &&
+                    selectedLayoutSlot.definition_id
+                      ? (() => {
+                          const fd = fieldById.get(
+                            selectedLayoutSlot.definition_id!
+                          );
+                          if (!fd) return null;
+                          return (
+                            <>
+                              <p className="text-[10px] font-medium text-slate-500">
+                                {crmFieldTypeHebrewLabel(
+                                  normalizeCrmFieldType(fd.field_type)
+                                )}
+                              </p>
+                              <p className="font-semibold text-slate-900 dark:text-slate-50">
+                                {fd.label?.trim() || "שדה"}
+                              </p>
+                            </>
+                          );
+                        })()
+                      : null}
+                    {selectedLayoutSlot.slot_kind === "core" ||
+                    selectedLayoutSlot.slot_kind === "custom" ? (
+                      <label className="grid gap-1 text-[10px] font-medium text-slate-600">
+                        רוחב בעמודות
+                        <select
+                          className="h-9 w-full rounded-lg border border-slate-200 bg-white px-2 text-xs font-mono tabular-nums dark:border-slate-600 dark:bg-slate-950"
+                          value={selectedLayoutSlot.column_span}
+                          onChange={(e) => {
+                            const n = Math.min(
+                              12,
+                              Math.max(1, +e.target.value)
+                            );
+                            void setSlotColumnSpan(selectedLayoutSlot, n);
+                          }}
+                        >
+                          {Array.from({ length: 12 }, (_, k) => k + 1).map(
+                            (c) => (
+                              <option key={c} value={c}>
+                                {c} / 12
+                              </option>
+                            )
+                          )}
+                        </select>
+                      </label>
+                    ) : null}
+                    <div className="flex items-start gap-1.5 rounded-md border border-amber-200/80 bg-amber-50/90 p-2 text-[9px] leading-relaxed text-amber-950 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-100">
+                      <Info className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                      <span>
+                        <strong>הרשאות צפייה/עריכה</strong> לשדה לפי תפקידים
+                        (כמו «יועצים») יבואו בגרסה הבאה, תוך חיבור ל־{/* */}
+                        <Link
+                          className="font-medium underline"
+                          href="/admin/settings/fields"
+                        >
+                          שדות
+                        </Link>{" "}
+                        והכרטיס. עד אז הכול נשלט כאן בפריסה.
+                      </span>
+                    </div>
+                    {selectedLayoutSlot.slot_kind === "core" ? (
+                      <p className="text-[9px] text-slate-500">
+                        הוסר/ה את השדה מהרשת כדי להסתירו מכרטיס לקוח.
+                      </p>
+                    ) : null}
+                  </div>
+                ) : (
+                  <p className="text-start text-[10px] text-slate-500">
+                    לחצו על <strong>שדה, מותאם או מפריד</strong> ברשת כדי לערוך
+                    רוחב, עיצוב והגדרות.
+                  </p>
+                )}
+              </aside>
+            ) : null}
 
             {previewOpen ? (
               <aside className="lg:sticky lg:top-6">
@@ -2110,6 +2505,50 @@ export default function AdminCrmLayoutBuilderPage() {
             className="mt-1 shrink-0 rounded-2xl border border-slate-200/80 bg-slate-50/95 px-3 py-3 shadow-sm dark:border-slate-800 dark:bg-slate-950/50"
             aria-label="ספריית רכיבים ופעולות"
           >
+            <div className="mb-3 rounded-xl border border-emerald-200/70 bg-gradient-to-b from-emerald-50/90 to-white px-2.5 py-2.5 dark:border-emerald-800/50 dark:from-emerald-950/25 dark:to-slate-950/50">
+              <p className="text-start text-[10px] font-bold leading-snug text-emerald-900 dark:text-emerald-100">
+                הוספת שדה (כמו «יועצים») — הזינו שם, המזהה ל־וורד/מסמכים
+                <code className="ms-0.5 rounded bg-emerald-200/50 px-1 text-[9px] dark:bg-emerald-900/50">
+                  {"{custom_*}"}
+                </code>{" "}
+                נבנה אוטומטית, והשדה נמצא בשורה הפעילה
+              </p>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {QUICK_ADDABLE_TYPES.map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    className={quickAddGreenBtnClass}
+                    disabled={loading || busy || !activeOrgId}
+                    onClick={() => openQuickAdd(t)}
+                    title={crmFieldTypeHebrewLabel(t)}
+                  >
+                    <Plus className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                    {crmFieldTypeHebrewLabel(t)}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  className={quickAddGreenBtnClass}
+                  disabled={
+                    loading ||
+                    busy ||
+                    slotTableFetchFailed ||
+                    sortedSections.length === 0
+                  }
+                  onClick={() => addDividerToToolbarTarget()}
+                  title="הוספת קו/כותרת — באותה שורה"
+                >
+                  <Minus className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                  מפריד
+                </button>
+              </div>
+              {!activeOrgId ? (
+                <p className="mt-1.5 text-start text-[9px] text-amber-800 dark:text-amber-200">
+                  נדרש ארגון פעיל (בחירה בראש המסוף).
+                </p>
+              ) : null}
+            </div>
             <p className="text-start text-[10px] font-semibold uppercase tracking-wide text-slate-500">
               ספריית שדות — גררו לרשת
             </p>
@@ -2254,20 +2693,6 @@ export default function AdminCrmLayoutBuilderPage() {
                 <Plus className="h-4 w-4" />
                 מודול חדש
               </button>
-              <button
-                type="button"
-                disabled={
-                  loading ||
-                  busy ||
-                  slotsTableMissing ||
-                  sortedSections.length === 0
-                }
-                onClick={() => void addDividerToToolbarTarget()}
-                className={builderAddBarBtnClass}
-              >
-                <Minus className="h-4 w-4" />
-                מפריד
-              </button>
             </div>
             <p className="mt-2 text-start text-[10px] leading-relaxed text-slate-500">
               אחרי «שמור שינויים» הפריסה מוטמעת בכרטיסי הלקוחות ובפורטל; אין צורך
@@ -2289,6 +2714,135 @@ export default function AdminCrmLayoutBuilderPage() {
           }}
         />
       ) : null}
+
+      {quickAddType ? (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4"
+          dir="rtl"
+        >
+          <button
+            type="button"
+            className="absolute inset-0 cursor-default"
+            aria-label="סגור"
+            onClick={() => !quickAddSaving && setQuickAddType(null)}
+          />
+          <form
+            onSubmit={handleQuickAddSubmit}
+            className="relative z-10 w-full max-w-md rounded-2xl border border-slate-200 bg-white p-4 text-start shadow-2xl dark:border-slate-600 dark:bg-slate-900"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-3 flex items-start justify-between gap-2">
+              <h2 className="text-sm font-bold text-slate-900 dark:text-slate-50">
+                {crmFieldTypeHebrewLabel(quickAddType)}
+              </h2>
+              <button
+                type="button"
+                onClick={() => !quickAddSaving && setQuickAddType(null)}
+                className="rounded-lg p-1 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"
+                aria-label="סגור"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <label className="grid gap-0.5 text-start">
+              <span className="text-[10px] font-semibold text-slate-600">
+                שם שדה (יוצר מזהה אוטומטית)
+              </span>
+              <input
+                value={quickAddLabel}
+                onChange={(e) => setQuickAddLabel(e.target.value)}
+                className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-sm dark:border-slate-600 dark:bg-slate-950"
+                autoFocus
+                required
+              />
+            </label>
+            {quickAddType === "select" ? (
+              <label className="mt-2 grid gap-0.5 text-start">
+                <span className="text-[10px] font-semibold text-slate-600">
+                  אפשרויות (שורה לכל בחירה)
+                </span>
+                <textarea
+                  value={quickAddOptions}
+                  onChange={(e) => setQuickAddOptions(e.target.value)}
+                  rows={3}
+                  className="w-full rounded-lg border border-slate-200 bg-white p-2 text-sm dark:border-slate-600 dark:bg-slate-950"
+                />
+              </label>
+            ) : null}
+            {quickAddType === "calculation" ? (
+              <label className="mt-2 grid gap-0.5 text-start">
+                <span className="text-[10px] font-semibold text-slate-600">
+                  נוסחה
+                </span>
+                <input
+                  value={quickAddFormula}
+                  onChange={(e) => setQuickAddFormula(e.target.value)}
+                  className="h-9 w-full rounded-lg border border-slate-200 bg-white px-2 font-mono text-xs ltr text-start dark:border-slate-600 dark:bg-slate-950"
+                  dir="ltr"
+                />
+              </label>
+            ) : null}
+            {quickAddLabel.trim() && suggestSlugFromLabel(quickAddLabel) ? (
+              <p className="mt-2 text-[10px] text-slate-500">
+                <span className="font-medium text-slate-600">קוד בכרטיס/מסמכים: </span>
+                <code className="rounded bg-slate-100 px-1 font-mono text-[9px] dark:bg-slate-800">
+                  {customFieldWordPlaceholder(
+                    ensureUniqueCustomFieldSlug(
+                      normalizeCustomFieldSlugInput(
+                        suggestSlugFromLabel(quickAddLabel) || "field"
+                      ) || "field",
+                      allSlugsLower
+                    )
+                  )}
+                </code>{" "}
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const basis = ensureUniqueCustomFieldSlug(
+                      normalizeCustomFieldSlugInput(
+                        suggestSlugFromLabel(quickAddLabel) || "field"
+                      ) || "field",
+                      allSlugsLower
+                    );
+                    const t = customFieldWordPlaceholder(basis);
+                    try {
+                      await navigator.clipboard.writeText(t);
+                    } catch {
+                      window.prompt("העתקה:", t);
+                    }
+                  }}
+                  className="ms-0.5 inline align-middle text-emerald-700 hover:underline dark:text-emerald-400"
+                >
+                  <Copy className="me-0.5 inline h-3 w-3" aria-hidden />
+                  העתק
+                </button>{" "}
+                (ייספר סופי אחרי שמירה)
+              </p>
+            ) : null}
+            <div className="mt-3 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setQuickAddType(null)}
+                disabled={quickAddSaving}
+                className={`${minimalistBtnClass} flex-1 justify-center`}
+              >
+                ביטול
+              </button>
+              <button
+                type="submit"
+                disabled={quickAddSaving}
+                className={`${minimalistPrimaryClass} flex-1 justify-center`}
+              >
+                {quickAddSaving ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : null}
+                הוסף לרשת
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
+
       <DragOverlay dropAnimation={null} style={{ cursor: "grabbing" }}>
         <LayoutDragOverlayContent
           activeId={activeDragId}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertCircle, Loader2 } from "lucide-react";
+import { AlertCircle, Loader2, RefreshCw } from "lucide-react";
 import {
   Bar,
   BarChart,
@@ -151,6 +151,12 @@ export default function AdminDashboardPage() {
     void load();
   }, [load]);
 
+  const applyDefaultRange = useCallback(() => {
+    const t = new Date();
+    setTo(ymd(t));
+    setFrom(ymd(addDays(t, -180)));
+  }, []);
+
   if (!me) {
     return (
       <div className="flex items-center justify-center py-20 text-slate-500">
@@ -212,64 +218,97 @@ export default function AdminDashboardPage() {
   const pieLabel = data?.pieByCustomField?.label;
 
   return (
-    <div className="space-y-6" dir="rtl">
-      <div>
-        <h1 className="text-lg font-semibold text-slate-900">דשבורד</h1>
-        <p className="mt-0.5 text-sm text-slate-600">
-          סיכומי תקבולים, לקוחות ושדה רשימה (מותאם אישית) לארגון{" "}
+    <div className="space-y-5" dir="rtl">
+      <div className="text-start">
+        <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+          ניתוח ותצוגה
+        </p>
+        <h1 className="text-xl font-bold tracking-tight text-slate-900">
+          דשבורד
+        </h1>
+        <p className="mt-1 text-sm text-slate-600">
+          סיכומי תקבולים, לקוחות ופילוח לפי שדה רשימה —{" "}
           <span className="font-medium text-slate-800">
             {activeOrg.brand_name?.trim() || activeOrg.name}
           </span>
         </p>
       </div>
 
-      <div className="flex flex-wrap items-end gap-3">
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="text-slate-600">מ־</span>
-          <input
-            type="date"
-            value={from}
-            onChange={(e) => setFrom(e.target.value)}
-            className="rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="text-slate-600">עד</span>
-          <input
-            type="date"
-            value={to}
-            onChange={(e) => setTo(e.target.value)}
-            className="rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
-          />
-        </label>
-        {data && data.selectFieldsForPie.length > 0 ? (
-          <label className="flex min-w-[12rem] flex-col gap-1 text-sm">
-            <span className="text-slate-600">פילוח עוגה (שדה רשימה)</span>
-            <select
-              value={
-                pieSlug ??
-                data.pieSlug ??
-                data.selectFieldsForPie[0]?.slug ??
-                ""
-              }
-              onChange={(e) => setPieSlug(e.target.value || null)}
-              className="rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
-            >
-              {data.selectFieldsForPie.map((f) => (
-                <option key={f.slug} value={f.slug}>
-                  {f.label}
-                </option>
-              ))}
-            </select>
-          </label>
-        ) : null}
-        <button
-          type="button"
-          onClick={() => void load()}
-          className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-800 hover:bg-slate-50"
-        >
-          עדכן
-        </button>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-stretch sm:justify-between sm:gap-4">
+        <div className="flex min-w-0 flex-1 flex-col gap-2 rounded-2xl border border-slate-200/80 bg-slate-50/80 px-3 py-2.5 sm:px-4 sm:py-3 dark:border-slate-800 dark:bg-slate-950/40">
+          <span className="text-[10px] font-semibold text-slate-500">
+            מסננים
+          </span>
+          <div className="flex flex-wrap items-end gap-2 sm:gap-3">
+            <label className="flex min-w-0 flex-col gap-0.5 text-sm">
+              <span className="text-xs text-slate-600">מ־</span>
+              <input
+                type="date"
+                value={from}
+                onChange={(e) => setFrom(e.target.value)}
+                className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm shadow-sm dark:border-slate-600 dark:bg-slate-900"
+              />
+            </label>
+            <label className="flex min-w-0 flex-col gap-0.5 text-sm">
+              <span className="text-xs text-slate-600">עד</span>
+              <input
+                type="date"
+                value={to}
+                onChange={(e) => setTo(e.target.value)}
+                className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm shadow-sm dark:border-slate-600 dark:bg-slate-900"
+              />
+            </label>
+            {data && data.selectFieldsForPie.length > 0 ? (
+              <label className="flex min-w-[10rem] flex-1 flex-col gap-0.5 text-sm sm:min-w-[12rem]">
+                <span className="text-xs text-slate-600">
+                  פילוח עוגה (רשימה)
+                </span>
+                <select
+                  value={
+                    pieSlug ??
+                    data.pieSlug ??
+                    data.selectFieldsForPie[0]?.slug ??
+                    ""
+                  }
+                  onChange={(e) => setPieSlug(e.target.value || null)}
+                  className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm shadow-sm dark:border-slate-600 dark:bg-slate-900"
+                >
+                  {data.selectFieldsForPie.map((f) => (
+                    <option key={f.slug} value={f.slug}>
+                      {f.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="flex shrink-0 flex-wrap items-stretch justify-end gap-2">
+          <button
+            type="button"
+            onClick={applyDefaultRange}
+            className="inline-flex min-h-10 min-w-[6.5rem] flex-1 items-center justify-center gap-1.5 rounded-lg bg-amber-500 px-3 text-sm font-semibold text-white shadow-sm transition hover:bg-amber-600 sm:min-w-[8.5rem] sm:flex-initial"
+          >
+            180 יום
+          </button>
+          <button
+            type="button"
+            onClick={() => void load()}
+            disabled={loading}
+            className="inline-flex min-h-10 min-w-[6.5rem] flex-1 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-3 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:opacity-60 sm:min-w-[8.5rem] sm:flex-initial"
+          >
+            {loading ? (
+              <Loader2
+                className="h-4 w-4 shrink-0 animate-spin"
+                aria-hidden
+              />
+            ) : (
+              <RefreshCw className="h-4 w-4 shrink-0" aria-hidden />
+            )}
+            רענן
+          </button>
+        </div>
       </div>
 
       {loading && !data ? (
@@ -317,8 +356,12 @@ export default function AdminDashboardPage() {
         </p>
       ) : null}
 
+      <div
+        className="space-y-5 rounded-2xl border border-slate-200/50 bg-white p-4 shadow-sm sm:p-5 dark:border-slate-800/60 dark:bg-slate-950/30"
+        aria-label="לוח הדוחות"
+      >
       <div className="grid min-w-0 gap-6 lg:grid-cols-2">
-        <div className="min-h-[280px] min-w-0 rounded-xl border border-slate-100 p-3">
+        <div className="min-h-[280px] min-w-0 rounded-xl border border-slate-100 bg-slate-50/30 p-3">
           <h2 className="mb-2 text-sm font-semibold text-slate-800">
             הכנסות לפי חודש (בטווח)
           </h2>
@@ -344,7 +387,7 @@ export default function AdminDashboardPage() {
           </div>
         </div>
 
-        <div className="min-h-[280px] min-w-0 rounded-xl border border-slate-100 p-3">
+        <div className="min-h-[280px] min-w-0 rounded-xl border border-slate-100 bg-slate-50/30 p-3">
           <h2 className="mb-2 text-sm font-semibold text-slate-800">
             {pieLabel
               ? `לקוחות לפי «${pieLabel}»`
@@ -383,7 +426,7 @@ export default function AdminDashboardPage() {
         </div>
       </div>
 
-      <div className="min-h-[260px] min-w-0 rounded-xl border border-slate-100 p-3">
+      <div className="min-h-[260px] min-w-0 rounded-xl border border-slate-100 bg-slate-50/30 p-3">
         <h2 className="mb-2 text-sm font-semibold text-slate-800">
           התפלגות לקוחות לפי סטטוס
         </h2>
@@ -421,6 +464,7 @@ export default function AdminDashboardPage() {
         <p className="mt-1 text-center text-xs text-slate-500">
           לקוחות פעילים: {sc?.totalActiveClients ?? 0}
         </p>
+      </div>
       </div>
     </div>
   );

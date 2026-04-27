@@ -2,6 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import type { SupabaseClient, User } from "@supabase/supabase-js";
 import { normalizeSupabaseProjectUrl } from "@/lib/supabaseUrl";
+import { getSupabaseAuthCookieOptions } from "@/lib/supabaseSessionCookies";
 
 /** Current user from cookies (App Router route handlers / server actions). */
 export async function getRouteSessionUser(): Promise<User | null> {
@@ -42,6 +43,7 @@ export async function getRouteHandlerSupabase(): Promise<SupabaseClient> {
   }
   const cookieStore = await cookies();
   return createServerClient(url, anonKey, {
+    cookieOptions: getSupabaseAuthCookieOptions(),
     cookies: {
       getAll() {
         return cookieStore.getAll();

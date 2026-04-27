@@ -1,6 +1,10 @@
 /**
  * Client `custom_fields_data` JSONB: keys = slug from `custom_field_definitions`,
- * values = string. Word placeholders: `{custom_slug}` / `{{custom_slug}}`.
+ * values = string.
+ *
+ * Word (docx): type `{custom_slug}` or `{{custom_slug}}` in the template; at merge time
+ * `normalizeDoubleBracePlaceholdersInDocxZip` rewrites them to `[[custom_slug]]` for Docxtemplater
+ * (see `lib/populateAgreementDocx.ts`).
  */
 
 export function parseClientCustomFieldsData(
@@ -209,8 +213,16 @@ export function ensureUniqueCustomFieldSlug(
   return candidate;
 }
 
-/** Placeholder string for Word / docx templates (docxtemplater style). */
+/**
+ * User-facing tag for Word — same forms the merge pipeline accepts before normalizing to `[[...]]`.
+ */
 export function customFieldWordPlaceholder(slug: string): string {
   const s = normalizeCustomFieldSlugInput(slug);
   return `{{custom_${s || "slug"}}}`;
+}
+
+/** After normalization (Docxtemplater delimiters) — for advanced copy/debug. */
+export function customFieldDocxNormalizedTag(slug: string): string {
+  const s = normalizeCustomFieldSlugInput(slug);
+  return `[[custom_${s || "slug"}]]`;
 }

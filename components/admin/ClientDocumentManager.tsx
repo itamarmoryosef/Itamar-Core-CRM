@@ -11,6 +11,7 @@ import {
 import {
   Bell,
   Clock,
+  Crosshair,
   Download,
   FileSignature,
   FileUp,
@@ -22,6 +23,7 @@ import {
   Settings2,
   Trash2,
 } from "lucide-react";
+import { PdfSignatureAnchorModal } from "@/components/admin/PdfSignatureAnchorModal";
 import { SectionCard } from "@/components/ui/SectionCard";
 import { supabase } from "@/lib/supabase";
 import { buildClientPatchAfterSignatureDocumentDeleted } from "@/lib/agreementSignatureDeleteSync";
@@ -56,6 +58,8 @@ export type DocRow = {
   needs_signature?: boolean | null;
   signature_signed_at?: string | null;
   signed_pdf_storage_path?: string | null;
+  /** Normalized rect on PDF for in-place signature; null = legacy appendix page. */
+  signature_anchor?: unknown | null;
   created_at?: string | null;
 };
 
@@ -80,6 +84,15 @@ export function documentRowEligibleForPortalSignature(doc: DocRow): boolean {
   if (!p) return false;
   const pl = p.toLowerCase();
   return pl.endsWith(".pdf") || pl.endsWith(".docx");
+}
+
+/** PDF only — Word uses HTML→PDF pipeline (no rectangle placement). */
+export function documentRowIsPdfForSignaturePlacement(doc: DocRow): boolean {
+  if (!documentRowEligibleForPortalSignature(doc)) return false;
+  const name = (doc.original_filename ?? "").toLowerCase();
+  if (name.endsWith(".pdf")) return true;
+  const p = resolveDocumentsUploadStoragePath(doc.storage_path, doc.file_url);
+  return (p ?? "").toLowerCase().endsWith(".pdf");
 }
 
 function docsForRequiredName(docs: DocRow[], requiredName: string): DocRow[] {
@@ -399,6 +412,9 @@ export function ClientDocumentManager({
   const [deleteConfirmDoc, setDeleteConfirmDoc] = useState<DocRow | null>(null);
   const [downloadAllBusy, setDownloadAllBusy] = useState(false);
   const [uploadDropActive, setUploadDropActive] = useState(false);
+  const [signatureAnchorDoc, setSignatureAnchorDoc] = useState<DocRow | null>(
+    null
+  );
 
   const requiredNames = useMemo(() => {
     return effectiveRequiredDocNames(client.required_docs);
@@ -461,7 +477,7 @@ export function ClientDocumentManager({
         original_filename: file.name,
       })
       .select(
-        "id, doc_type, file_url, original_filename, storage_path, name, status, needs_signature, signature_signed_at, signed_pdf_storage_path, created_at"
+        "id, doc_type, file_url, original_filename, storage_path, name, status, needs_signature, signature_signed_at, signed_pdf_storage_path, signature_anchor, created_at"
       )
       .single();
     if (insErr) return { error: insErr.message, row: null };
@@ -1306,6 +1322,21 @@ export function ClientDocumentManager({
                                   <FileSignature className="h-3.5 w-3.5" aria-hidden />
                                 )}
                               </button>
+                              {documentRowHasUpload(d) &&
+                              documentRowIsPdfForSignaturePlacement(d) ? (
+                                <button
+                                  type="button"
+                                  title="מיקום חתימה על ה־PDF"
+                                  disabled={
+                                    togglingSigDocId !== null ||
+                                    deletingDocId === d.id
+                                  }
+                                  onClick={() => setSignatureAnchorDoc(d)}
+                                  className="inline-flex h-8 min-w-8 items-center justify-center rounded-lg border border-indigo-200 bg-indigo-50 px-1.5 text-indigo-800 shadow-sm hover:bg-indigo-100 disabled:opacity-50 dark:border-indigo-900 dark:bg-indigo-950/50 dark:text-indigo-200 dark:hover:bg-indigo-950/80"
+                                >
+                                  <Crosshair className="h-3.5 w-3.5" aria-hidden />
+                                </button>
+                              ) : null}
                               <button
                                 type="button"
                                 title="עריכת סוג מסמך"
@@ -1482,6 +1513,17 @@ export function ClientDocumentManager({
           </div>
         </div>
       ) : null}
+      <PdfSignatureAnchorModal
+        open={signatureAnchorDoc !== null}
+        doc={signatureAnchorDoc}
+        clientId={clientId}
+        initialAnchor={signatureAnchorDoc?.signature_anchor}
+        onClose={() => setSignatureAnchorDoc(null)}
+        onSaved={() => {
+          void loadAll();
+        }}
+        setToast={setToast}
+      />
     </>
   );
 }

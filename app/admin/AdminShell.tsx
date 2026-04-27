@@ -16,6 +16,8 @@ import {
   DEFAULT_PRODUCT_DISPLAY_NAME,
 } from "@/lib/orgBranding";
 import { resolveAdminOrganizationId } from "@/lib/orgContextClient";
+import { ORG_FEATURE } from "@/lib/orgFeatureCodes";
+import { checkFeature } from "@/lib/checkFeature";
 
 const MAIN_NAV = {
   href: "/admin/clients",
@@ -36,15 +38,23 @@ const CRM_STATUSES_NAV = {
   match: (p: string) => p.startsWith("/admin/settings/statuses"),
 } as const;
 
+/** שדות דינמיים + ייבוא מ־Word — מסך ייעודי */
+const CRM_FIELDS_NAV = {
+  href: "/admin/settings/fields",
+  label: "שדות מותאמים",
+  match: (p: string) => p.startsWith("/admin/settings/fields"),
+} as const;
+
 const SETTINGS_NAV = {
   href: "/admin/settings",
   label: "הגדרות ותצורה",
   match: (p: string) =>
     p === "/admin/settings" ||
     (p.startsWith("/admin/settings/") &&
-      !p.startsWith("/admin/settings/statuses")),
+      !p.startsWith("/admin/settings/statuses") &&
+      !p.startsWith("/admin/settings/fields")),
   title:
-    "תזכורות, מיתוג, סוגי מסמכים, תבניות — לא כולל מסך סטטוסי ה־CRM",
+    "תזכורות, מיתוג, סוגי מסמכים, תבניות — לא כולל מסכי סטטוס או שדות מותאמים",
 } as const;
 
 const TEAM_NAV = {
@@ -54,9 +64,16 @@ const TEAM_NAV = {
 } as const;
 
 const SUPER_ORGS_NAV = {
-  href: "/admin/super/organizations",
+  href: "/admin/organizations",
   label: "ארגונים (Super)",
-  match: (p: string) => p.startsWith("/admin/super"),
+  match: (p: string) =>
+    p.startsWith("/admin/organizations") || p.startsWith("/admin/super"),
+} as const;
+
+/** ב־/admin/settings רובריקת «ספקי לידים» (#leads); נפרדים מה־link הכללי לשם הדגשה נכונה. */
+const LEAD_PROVIDERS_SHALLOW_NAV = {
+  href: "/admin/settings#leads",
+  label: "ספקי לידים",
 } as const;
 
 type SuperOrgRow = {
@@ -97,6 +114,25 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   const [me, setMe] = useState<AdminMeResponse | null>(null);
   const [superOrgs, setSuperOrgs] = useState<SuperOrgRow[] | null>(null);
   const [tick, setTick] = useState(0);
+  const [enabledFeatureCodes, setEnabledFeatureCodes] = useState<string[] | null>(null);
+  /** hash על `/admin/settings` (למשל `leads`) – לקישור קיצור ספקי לידים */
+  const [adminSettingsTopHash, setAdminSettingsTopHash] = useState("");
+
+  useEffect(() => {
+    const readTopSettingsHash = () => {
+      if (typeof window === "undefined") return;
+      if (window.location.pathname === "/admin/settings") {
+        setAdminSettingsTopHash(window.location.hash.replace(/^#/, "") || "");
+      } else {
+        setAdminSettingsTopHash("");
+      }
+    };
+    readTopSettingsHash();
+    window.addEventListener("hashchange", readTopSettingsHash);
+    return () => {
+      window.removeEventListener("hashchange", readTopSettingsHash);
+    };
+  }, [pathname, tick]);
 
   const loadSession = useCallback(async () => {
     const res = await fetch("/api/admin/me", { credentials: "include" });
@@ -134,10 +170,12 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
     const bump = () => setTick((n) => n + 1);
     window.addEventListener("crm-branding-updated", bump);
     window.addEventListener("crm-active-organization-changed", bump);
+    window.addEventListener("crm-organization-features-updated", bump);
     window.addEventListener("storage", bump);
     return () => {
       window.removeEventListener("crm-branding-updated", bump);
       window.removeEventListener("crm-active-organization-changed", bump);
+      window.removeEventListener("crm-organization-features-updated", bump);
       window.removeEventListener("storage", bump);
     };
   }, []);
@@ -172,19 +210,69 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
     return null;
   }, [me, superOrgs]);
 
+  useEffect(() => {
+    const orgId = activeOrganization?.id;
+    if (!orgId) {
+      setEnabledFeatureCodes(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const res = await fetch(
+        `/api/admin/features?organizationId=${encodeURIComponent(orgId)}`,
+        { credentials: "include" }
+      );
+      if (!res.ok) {
+        if (!cancelled) {
+          setEnabledFeatureCodes(null);
+        }
+        return;
+      }
+      const j = (await res.json()) as {
+        enabledCodes?: string[] | null;
+        error?: string;
+      };
+      if (cancelled) return;
+      setEnabledFeatureCodes(
+        j.enabledCodes === null || j.enabledCodes === undefined
+          ? null
+          : j.enabledCodes
+      );
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeOrganization?.id, tick]);
+
   const displayName =
     activeOrganization?.brand_name?.trim() || DEFAULT_PRODUCT_DISPLAY_NAME;
   const logoUrl = activeOrganization?.logo_url?.trim() || null;
   const primaryHex =
     activeOrganization?.primary_color?.trim() || "#6366f1";
 
+  const showLeadProvidersInNav =
+    checkFeature(enabledFeatureCodes, ORG_FEATURE.settings) &&
+    checkFeature(enabledFeatureCodes, ORG_FEATURE.leadProviders);
+  const settingsMainNavActive =
+    SETTINGS_NAV.match(pathname) &&
+    !(
+      pathname === "/admin/settings" &&
+      adminSettingsTopHash === "leads" &&
+      showLeadProvidersInNav
+    );
+  const leadProvidersShallowNavActive =
+    showLeadProvidersInNav &&
+    pathname === "/admin/settings" &&
+    adminSettingsTopHash === "leads";
+
   const sessionValue: AdminSessionValue = useMemo(
     () => ({
       me,
       activeOrganization,
+      enabledFeatureCodes,
       refresh: () => setTick((n) => n + 1),
     }),
-    [me, activeOrganization]
+    [me, activeOrganization, enabledFeatureCodes]
   );
 
   useEffect(() => {
@@ -267,12 +355,15 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
                 >
                   {MAIN_NAV.label}
                 </Link>
-              <Link
+                {checkFeature(enabledFeatureCodes, ORG_FEATURE.revenue) ? (
+                <Link
                 href={REVENUE_NAV.href}
                 className={navLinkClass(pathname, REVENUE_NAV.match(pathname))}
               >
                 {REVENUE_NAV.label}
               </Link>
+              ) : null}
+              {checkFeature(enabledFeatureCodes, ORG_FEATURE.statuses) ? (
               <Link
                 href={CRM_STATUSES_NAV.href}
                 className={navLinkClass(
@@ -282,16 +373,38 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
               >
                 {CRM_STATUSES_NAV.label}
               </Link>
+              ) : null}
+              {checkFeature(enabledFeatureCodes, ORG_FEATURE.customFields) ? (
+              <Link
+                href={CRM_FIELDS_NAV.href}
+                className={navLinkClass(
+                  pathname,
+                  CRM_FIELDS_NAV.match(pathname)
+                )}
+              >
+                {CRM_FIELDS_NAV.label}
+              </Link>
+              ) : null}
+              {checkFeature(enabledFeatureCodes, ORG_FEATURE.settings) ? (
               <Link
                 href={SETTINGS_NAV.href}
                 title={SETTINGS_NAV.title}
-                className={navLinkClass(
-                  pathname,
-                  SETTINGS_NAV.match(pathname)
-                )}
+                className={navLinkClass(pathname, settingsMainNavActive)}
               >
                 {SETTINGS_NAV.label}
               </Link>
+              ) : null}
+              {showLeadProvidersInNav ? (
+                <Link
+                  href={LEAD_PROVIDERS_SHALLOW_NAV.href}
+                  className={navLinkClass(
+                    pathname,
+                    leadProvidersShallowNavActive
+                  )}
+                >
+                  {LEAD_PROVIDERS_SHALLOW_NAV.label}
+                </Link>
+              ) : null}
               {showSuperNav ? (
                   <Link
                     href={SUPER_ORGS_NAV.href}
@@ -303,7 +416,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
                     {SUPER_ORGS_NAV.label}
                   </Link>
                 ) : null}
-                {showTeamNav ? (
+                {showTeamNav && checkFeature(enabledFeatureCodes, ORG_FEATURE.team) ? (
                   <Link
                     href={TEAM_NAV.href}
                     className={navLinkClass(pathname, TEAM_NAV.match(pathname))}
@@ -375,6 +488,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
                 >
                   {MAIN_NAV.label}
                 </Link>
+                {checkFeature(enabledFeatureCodes, ORG_FEATURE.revenue) ? (
                 <Link
                   href={REVENUE_NAV.href}
                   onClick={() => setMobileNavOpen(false)}
@@ -386,6 +500,8 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
                 >
                   {REVENUE_NAV.label}
                 </Link>
+                ) : null}
+                {checkFeature(enabledFeatureCodes, ORG_FEATURE.statuses) ? (
                 <Link
                   href={CRM_STATUSES_NAV.href}
                   onClick={() => setMobileNavOpen(false)}
@@ -397,18 +513,43 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
                 >
                   {CRM_STATUSES_NAV.label}
                 </Link>
+                ) : null}
+                {checkFeature(enabledFeatureCodes, ORG_FEATURE.customFields) ? (
+                <Link
+                  href={CRM_FIELDS_NAV.href}
+                  onClick={() => setMobileNavOpen(false)}
+                  className={navLinkClass(
+                    pathname,
+                    CRM_FIELDS_NAV.match(pathname),
+                    true
+                  )}
+                >
+                  {CRM_FIELDS_NAV.label}
+                </Link>
+                ) : null}
+                {checkFeature(enabledFeatureCodes, ORG_FEATURE.settings) ? (
                 <Link
                   href={SETTINGS_NAV.href}
                   title={SETTINGS_NAV.title}
                   onClick={() => setMobileNavOpen(false)}
-                  className={navLinkClass(
-                    pathname,
-                    SETTINGS_NAV.match(pathname),
-                    true
-                  )}
+                  className={navLinkClass(pathname, settingsMainNavActive, true)}
                 >
                   {SETTINGS_NAV.label}
                 </Link>
+                ) : null}
+                {showLeadProvidersInNav ? (
+                  <Link
+                    href={LEAD_PROVIDERS_SHALLOW_NAV.href}
+                    onClick={() => setMobileNavOpen(false)}
+                    className={navLinkClass(
+                      pathname,
+                      leadProvidersShallowNavActive,
+                      true
+                    )}
+                  >
+                    {LEAD_PROVIDERS_SHALLOW_NAV.label}
+                  </Link>
+                ) : null}
                 {showSuperNav ? (
                   <Link
                     href={SUPER_ORGS_NAV.href}
@@ -422,7 +563,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
                     {SUPER_ORGS_NAV.label}
                   </Link>
                 ) : null}
-                {showTeamNav ? (
+                {showTeamNav && checkFeature(enabledFeatureCodes, ORG_FEATURE.team) ? (
                   <Link
                     href={TEAM_NAV.href}
                     onClick={() => setMobileNavOpen(false)}

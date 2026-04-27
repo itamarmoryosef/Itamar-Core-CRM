@@ -25,6 +25,7 @@ import { supabase } from "@/lib/supabase";
 import { getLayoutSectionsTableName } from "@/lib/layoutSectionsTable";
 import { fetchClientRowForPortal } from "@/lib/fetchClientForPortal";
 import { buildAgreementTemplateData } from "@/lib/populateAgreementDocx";
+import { parseSignatureAnchor } from "@/lib/signatureAnchor";
 
 /** Loads only when the signature UI mounts — keeps initial portal JS smaller. */
 const SignaturePad = dynamic(
@@ -180,6 +181,7 @@ type PortalDocumentRow = {
   needs_signature?: boolean | null;
   signature_signed_at?: string | null;
   signed_pdf_storage_path?: string | null;
+  signature_anchor?: unknown | null;
   created_at?: string | null;
 };
 
@@ -638,7 +640,7 @@ function ClientPortalImpl({ clientId }: ClientPortalProps) {
     const { data, error } = await supabase
       .from("documents")
       .select(
-        "id, doc_type, file_url, original_filename, storage_path, needs_signature, signature_signed_at, signed_pdf_storage_path, created_at"
+        "id, doc_type, file_url, original_filename, storage_path, needs_signature, signature_signed_at, signed_pdf_storage_path, signature_anchor, created_at"
       )
       .eq("client_id", clientId);
 
@@ -2004,12 +2006,14 @@ function ClientPortalImpl({ clientId }: ClientPortalProps) {
               "@/lib/mergeCustomAgreementPdfSignature"
             );
             const agreementBytes = await dlBlob.arrayBuffer();
+            const signatureAnchor = parseSignatureAnchor(docRow.signature_anchor);
             pdfBlob = await mergeCustomAgreementPdfWithSignature(
               agreementBytes,
               signatureDataUrl,
               {
                 idNumber: client.id_number,
                 signedAt: new Date(),
+                signatureAnchor,
               }
             );
           }

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
-import { getRouteSessionUser } from "@/lib/supabaseAuthRoute";
+import { getRouteHandlerSupabase, getRouteSessionUser } from "@/lib/supabaseAuthRoute";
 import { createServiceRoleSupabase } from "@/lib/supabaseServiceRole";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   isProfilePlatformSuper,
   isProfileTeamAdmin,
@@ -36,7 +37,13 @@ export async function GET() {
   }
 
   try {
-    const adminClient = createServiceRoleSupabase();
+    let adminClient: SupabaseClient;
+    try {
+      adminClient = createServiceRoleSupabase();
+    } catch {
+      adminClient = await getRouteHandlerSupabase();
+    }
+
     const [teamAdmin, platformSuper, profileRes] = await Promise.all([
       isProfileTeamAdmin(adminClient, sessionUser.id),
       isProfilePlatformSuper(adminClient, sessionUser.id),
@@ -46,12 +53,18 @@ export async function GET() {
         .eq("id", sessionUser.id)
         .maybeSingle(),
     ]);
-    if (profileRes.error) {
-      throw profileRes.error;
+    const profileErr = profileRes.error;
+    if (profileErr) {
+      const m = profileErr.message?.toLowerCase() ?? "";
+      if (!/organization_id|column|schema|does not exist/.test(m)) {
+        throw profileErr;
+      }
     }
-    const orgId = (profileRes.data as { organization_id?: string | null } | null)
-      ?.organization_id
-      ?.trim();
+    const orgId = profileErr
+      ? null
+      : (profileRes.data as { organization_id?: string | null } | null)
+          ?.organization_id
+          ?.trim() ?? null;
     const orgQ = orgId
       ? await adminClient
           .from("organizations")
@@ -60,7 +73,10 @@ export async function GET() {
           .maybeSingle()
       : { data: null, error: null as null };
     if (orgQ.error) {
-      throw orgQ.error;
+      const m = orgQ.error.message?.toLowerCase() ?? "";
+      if (!/relation|does not exist|column|schema|organization/.test(m)) {
+        throw orgQ.error;
+      }
     }
     const orgRow = orgQ.data as
       | {

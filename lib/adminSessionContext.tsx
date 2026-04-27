@@ -14,6 +14,8 @@ export type AdminSessionValue = {
   me: AdminMeResponse | null;
   /** Effective org for shell branding + feature flags (super = active selection). */
   activeOrganization: AdminActiveOrganization | null;
+  /** Feature codes enabled for the active org; null = not loaded yet. */
+  enabledFeatureCodes: string[] | null;
   refresh: () => void;
 };
 

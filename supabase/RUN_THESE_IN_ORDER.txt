@@ -1,0 +1,32 @@
+מסלול A — PASTE (ליבה)
+1  supabase/PASTE_01_CORE.sql
+2  supabase/PASTE_02_LAYOUT.sql
+3  supabase/PASTE_03_ADDONS.sql
+
+אחרי הליבה (תכונות הפרויקט)
+4  migrations/add_multi_tenancy_organizations.sql
+5  migrations/add_client_statuses_is_active.sql
+6  migrations/add_documents_signature_anchor.sql
+7  supabase/POST_INSTALL_HE.sql
+
+---
+מסלול B — database.sql (חלופה ל-PASTE; לא ביחד עם PASTE_01)
+1  database.sql
+2  profiles_team.sql
+3  settings.sql
+4  migrations/crm_v2_enhancements.sql
+5  (המשך לפי SQL_RUN_ORDER.md או הקבצים בפרויקט)
+6  migrations/add_multi_tenancy_organizations.sql
+7  migrations/add_client_statuses_is_active.sql
+8  migrations/add_documents_signature_anchor.sql
+9  supabase/POST_INSTALL_HE.sql
+
+---
+PostgREST: "Could not find the table public.custom_field_sections" (הריץ אחרי לפחות
+clients+Core או מסלול A/B, ואז אם צריך) — migrations/bootstrap_custom_field_tables.sql
+  ואם עדיין לא: migrations/add_multi_tenancy_organizations.sql (הוספת organization_id ל־RLS/טבלאות)
+---
+רק אם יש שגיאה
+   migrations/add_templates_is_active.sql
+   migrations/add_document_types_columns.sql
+   migrations/add_lead_revenue_bootstrap.sql

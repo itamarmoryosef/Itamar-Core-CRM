@@ -37,6 +37,9 @@ import {
 } from "@/lib/storageKey";
 import { resolveAdminOrganizationId, setSuperActiveOrganizationId } from "@/lib/orgContextClient";
 import type { AdminMeResponse } from "@/app/api/admin/me/route";
+import { useAdminSession } from "@/lib/adminSessionContext";
+import { checkFeature } from "@/lib/checkFeature";
+import { ORG_FEATURE } from "@/lib/orgFeatureCodes";
 
 type DocumentTypeRow = {
   id: string;
@@ -171,6 +174,23 @@ export default function AdminSettingsPage() {
   const [activeRubric, setActiveRubric] =
     useState<SettingsRubricKey>("branding");
 
+  const adminSess = useAdminSession();
+  const enabledFeatureCodes = adminSess?.enabledFeatureCodes ?? null;
+  const rubricButtons = useMemo((): [SettingsRubricKey, string][] => {
+    const all: [SettingsRubricKey, string][] = [
+      ["branding", "מיתוג"],
+      ["notifications", "התראות"],
+      ["reminders", "תזכורות"],
+      ["leads", "ספקי לידים"],
+      ["docTypes", "סוגי מסמכים"],
+      ["templates", "תבניות וקודים"],
+      ["team", "ניהול צוות"],
+    ];
+    return all.filter(
+      ([k]) => k !== "leads" || checkFeature(enabledFeatureCodes, ORG_FEATURE.leadProviders)
+    );
+  }, [enabledFeatureCodes]);
+
   const [brandBusinessName, setBrandBusinessName] = useState("");
   const [brandTagline, setBrandTagline] = useState("");
   const [brandPrimary, setBrandPrimary] = useState("");
@@ -257,6 +277,15 @@ export default function AdminSettingsPage() {
     if (typeof window === "undefined") return;
     window.localStorage.setItem("admin-settings-active-rubric", activeRubric);
   }, [activeRubric]);
+
+  useEffect(() => {
+    if (
+      activeRubric === "leads" &&
+      !checkFeature(enabledFeatureCodes, ORG_FEATURE.leadProviders)
+    ) {
+      setActiveRubric("branding");
+    }
+  }, [activeRubric, enabledFeatureCodes]);
 
   function agreementTemplatePublicUrl(storagePath: string): string {
     const { data } = supabase.storage
@@ -421,30 +450,19 @@ export default function AdminSettingsPage() {
     if (!meLoadDone) return;
     setLeadProvidersLoading(true);
     setLeadProvidersError(null);
-    const baseQ = supabase
-      .from("lead_providers")
-      .select("id, name, phone, commission_percent, created_at")
-      .order("name", { ascending: true });
-    const first =
-      activeOrgId != null
-        ? await baseQ.eq("organization_id", activeOrgId)
-        : await baseQ;
-    let { data, error } = first;
-    if (error && activeOrgId && /column|schema/i.test(error.message)) {
-      const fb = await supabase
-        .from("lead_providers")
-        .select("id, name, phone, commission_percent, created_at")
-        .order("name", { ascending: true });
-      data = fb.data;
-      error = fb.error;
-    }
+    const { loadLeadProviderRows } = await import(
+      "@/lib/leadProvidersClientQuery"
+    );
+    const { data, error } = await loadLeadProviderRows(supabase, {
+      organizationId: activeOrgId,
+    });
     setLeadProvidersLoading(false);
     if (error) {
       setLeadProviders([]);
       setLeadProvidersError(error.message);
       return;
     }
-    setLeadProviders((data ?? []) as LeadProviderRow[]);
+    setLeadProviders(data as LeadProviderRow[]);
   }, [activeOrgId, meLoadDone]);
 
   useEffect(() => {
@@ -1091,15 +1109,7 @@ export default function AdminSettingsPage() {
 
         <div className="rounded-2xl border border-neutral-200/80 bg-white p-3 shadow-sm dark:border-neutral-800 dark:bg-neutral-900/90">
           <div className="flex flex-wrap gap-2">
-            {([
-              ["branding", "מיתוג"],
-              ["notifications", "התראות"],
-              ["reminders", "תזכורות"],
-              ["leads", "ספקי לידים"],
-              ["docTypes", "סוגי מסמכים"],
-              ["templates", "תבניות וקודים"],
-              ["team", "ניהול צוות"],
-            ] as const).map(([key, label]) => (
+            {rubricButtons.map(([key, label]) => (
               <button
                 key={key}
                 type="button"

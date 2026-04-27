@@ -958,7 +958,7 @@ function AdminClientDetailPageInner() {
     const { data: dRows } = await supabase
       .from("documents")
       .select(
-        "id, doc_type, file_url, original_filename, storage_path, name, status, needs_signature, signature_signed_at, signed_pdf_storage_path, created_at"
+        "id, doc_type, file_url, original_filename, storage_path, name, status, needs_signature, signature_signed_at, signed_pdf_storage_path, signature_anchor, created_at"
       )
       .eq("client_id", clientId);
 
@@ -1101,10 +1101,9 @@ function AdminClientDetailPageInner() {
           .order("created_at", { ascending: false }),
         supabase
           .from("payments")
-          .select("id, amount, paid_on, method, description, created_at")
+          .select("id, amount, paid_on, method, description")
           .eq("client_id", clientId)
-          .order("paid_on", { ascending: false })
-          .order("created_at", { ascending: false }),
+          .order("paid_on", { ascending: false }),
         supabase
           .from("custom_field_values")
           .select("definition_id, value_text")
@@ -2769,6 +2768,7 @@ function AdminClientDetailPageInner() {
       } else {
         payload.signature_signed_at = doc.signature_signed_at ?? null;
         payload.signed_pdf_storage_path = doc.signed_pdf_storage_path ?? null;
+        payload.signature_anchor = null;
       }
 
       const { error: upErr } = await supabase

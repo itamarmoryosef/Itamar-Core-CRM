@@ -19,6 +19,7 @@ import type { CrmFieldType } from "@/lib/crmFieldLayout";
 import { isPostgrestMissingRelation } from "@/lib/postgrestSchema";
 import { resolveAdminOrganizationId, setSuperActiveOrganizationId } from "@/lib/orgContextClient";
 import type { AdminMeResponse } from "@/app/api/admin/me/route";
+import { CustomFieldsDocumentImportPanel } from "@/components/admin/CustomFieldsDocumentImportPanel";
 
 type CustomFieldSection = {
   id: string;
@@ -89,6 +90,42 @@ export default function CustomFieldsSettingsPage() {
   const [meLoadDone, setMeLoadDone] = useState(false);
   const [allOrgs, setAllOrgs] = useState<{ id: string; name: string; slug: string }[] | null>(null);
   const [activeOrgId, setActiveOrgId] = useState<string | null>(null);
+  const [claimOrgBusy, setClaimOrgBusy] = useState(false);
+
+  const claimDefaultOrganization = useCallback(async () => {
+    setClaimOrgBusy(true);
+    try {
+      const res = await fetch("/api/admin/claim-organization", {
+        method: "POST",
+        credentials: "include",
+      });
+      const j = (await res.json()) as {
+        organizationId?: string;
+        error?: string;
+        code?: string;
+      };
+      if (!res.ok) {
+        setToast({
+          type: "error",
+          message: j.error ?? "שיוך נכשל",
+        });
+        return;
+      }
+      if (j.organizationId) {
+        setActiveOrgId(j.organizationId);
+        const mer = await fetch("/api/admin/me", { credentials: "include" });
+        if (mer.ok) {
+          setMe((await mer.json()) as AdminMeResponse);
+        }
+        setLoadError(null);
+        setToast({ type: "success", message: "שוייכתם לארגון בהצלחה." });
+      }
+    } catch {
+      setToast({ type: "error", message: "שגיאת רשת" });
+    } finally {
+      setClaimOrgBusy(false);
+    }
+  }, []);
 
   useEffect(() => {
     let c = false;
@@ -479,8 +516,13 @@ export default function CustomFieldsSettingsPage() {
           </p>
           <h1 className="text-start text-2xl font-bold tracking-tight">שדות מותאמים אישית</h1>
           <p className="mt-1 max-w-2xl text-start text-sm text-slate-600 dark:text-slate-300">
-            הגדירו קבוצות (סקשנים) ושדות דינמיים. Slug שומר ב־JSON של הלקוח ובמסמכי Word ({`{{custom_slug}}`}).
-            בלקוח ניתן לצמצם שדות דרך{" "}
+            הגדירו קבוצות (סקשנים) ושדות דינמיים. ה־slug נשמר ב־JSON של הלקוח (
+            <code className="rounded bg-slate-200/80 px-1 dark:bg-slate-800">custom_fields_data</code>
+            ) ובמסמכי Word — קוד שתילה{" "}
+            <code className="rounded bg-slate-200/80 px-1 [direction:ltr] text-left dark:bg-slate-800">
+              {`{{custom_…}}`}
+            </code>{" "}
+            (ממוזג אוטומטית לתבנית docx). בלקוח ניתן לצמצם שדות דרך{" "}
             <code className="rounded bg-slate-200/80 px-1 dark:bg-slate-800">assigned_field_definition_ids</code>{" "}
             בפרופיל הלקוח.
           </p>
@@ -532,6 +574,45 @@ export default function CustomFieldsSettingsPage() {
         </p>
       ) : null}
 
+      {meLoadDone && me && !me.platformSuper && !activeOrgId ? (
+        <div
+          className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-3 text-start text-sm text-amber-950 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100"
+          role="status"
+        >
+          <p className="font-medium">הפרופיל עדיין לא משויך לארגון (organization).</p>
+          <p className="mt-1 text-slate-700 dark:text-slate-300">
+            אם במסד הוגדר ארגון <strong>אחד בלבד</strong>, אפשר לשייך אוטומטית. אם יש כמה ארגונים —
+            Super צריך לשייך אתכם.
+          </p>
+          <button
+            type="button"
+            disabled={claimOrgBusy}
+            onClick={() => void claimDefaultOrganization()}
+            className="mt-2 inline-flex items-center gap-2 rounded-lg bg-amber-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-800 disabled:opacity-50"
+          >
+            {claimOrgBusy ? (
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+            ) : null}
+            שיוך לארגון הברירה (רק כשהמערכת בודדת)
+          </button>
+        </div>
+      ) : null}
+
+      {meLoadDone && me?.platformSuper && (allOrgs?.length ?? 0) === 0 ? (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-start text-sm text-rose-900 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-100">
+          <p>
+            אין עדיין ארגונים במסד.{" "}
+            <Link
+              className="font-medium underline"
+              href="/admin/organizations"
+            >
+              צרו ארגון במסך Super
+            </Link>
+            , ואז בחרו אותו למעלה.
+          </p>
+        </div>
+      ) : null}
+
       {loading ? (
         <div className="flex items-center gap-2 text-slate-500">
           <Loader2 className="h-5 w-5 animate-spin" aria-hidden />
@@ -561,6 +642,10 @@ export default function CustomFieldsSettingsPage() {
               שדה חדש
             </button>
           </div>
+
+          <CustomFieldsDocumentImportPanel
+            defs={defs.map((d) => ({ label: d.label, slug: d.slug }))}
+          />
 
           {sections.length === 0 && defsBySection.get("none")?.length === 0 ? (
             <div className={cardClass + " text-slate-600 dark:text-slate-300"}>

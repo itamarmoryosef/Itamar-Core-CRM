@@ -180,8 +180,10 @@ export function EmbedCodesModal(props: {
             </ul>
           )}
         </div>
-        <p className="border-t border-slate-100 px-3 py-1.5 text-center text-[10px] text-neutral-500 dark:border-neutral-800 dark:text-neutral-400">
-          לחיצה על השורה או על סמל ההעתקה — האייקון יסמן אישור זמני
+        <p className="border-t border-slate-100 px-3 py-1.5 text-center text-[10px] leading-relaxed text-neutral-500 dark:border-neutral-800 dark:text-neutral-400">
+          {`{{custom_…}}`} מזוהה במיזוג docx; לפני Docxtemplater הופך ל־
+          <code className="[direction:ltr]">[[custom_…]]</code>
+          . לחיצה על שורה — להעתקה
         </p>
       </div>
     </div>

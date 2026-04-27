@@ -401,6 +401,84 @@ create policy "custom_field_definitions_allow_all_authenticated"
 -- custom_field_values (optional normalized store; merges over clients.custom_fields_data)
 -- ---------------------------------------------------------------------------
 
+do $$
+declare
+  n bigint;
+begin
+  if to_regclass ('public.custom_field_values') is null then
+    return;
+  end if;
+
+  if exists (
+    select
+      1
+    from information_schema.columns
+    where
+      table_schema = 'public'
+      and table_name = 'custom_field_values'
+      and column_name = 'definition_id'
+  ) then
+    return;
+  end if;
+
+  if exists (
+    select
+      1
+    from information_schema.columns
+    where
+      table_schema = 'public'
+      and table_name = 'custom_field_values'
+      and column_name = 'field_id'
+  ) then
+    alter table public.custom_field_values rename column field_id to definition_id;
+
+    return;
+  end if;
+
+  if exists (
+    select
+      1
+    from information_schema.columns
+    where
+      table_schema = 'public'
+      and table_name = 'custom_field_values'
+      and column_name = 'custom_field_definition_id'
+  ) then
+    alter table public.custom_field_values rename column custom_field_definition_id to definition_id;
+
+    return;
+  end if;
+
+  if exists (
+    select
+      1
+    from information_schema.columns
+    where
+      table_schema = 'public'
+      and table_name = 'custom_field_values'
+      and column_name = 'custom_field_id'
+  ) then
+    alter table public.custom_field_values rename column custom_field_id to definition_id;
+
+    return;
+  end if;
+
+  select
+    count(*)::bigint
+    into
+      n
+  from
+    public.custom_field_values;
+
+  if n = 0 then
+    drop table public.custom_field_values cascade;
+  else
+    raise exception
+      'custom_field_values has rows but no definition_id (or field_id to rename). Use migrations/bootstrap_custom_field_tables.sql or migrate manually.';
+  end if;
+end
+$$;
+
 create table if not exists public.custom_field_values (
   client_id uuid not null references public.clients (id) on delete cascade,
   definition_id uuid not null references public.custom_field_definitions (id) on delete cascade,
@@ -408,6 +486,12 @@ create table if not exists public.custom_field_values (
   updated_at timestamptz not null default now (),
   primary key (client_id, definition_id)
 );
+
+alter table public.custom_field_values
+add column if not exists value_text text not null default '';
+
+alter table public.custom_field_values
+add column if not exists updated_at timestamptz not null default now ();
 
 create index if not exists custom_field_values_definition_id_idx
   on public.custom_field_values (definition_id);

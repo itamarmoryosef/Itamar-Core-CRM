@@ -2,6 +2,76 @@
 -- שלב 2: פריסת כרטיס CRM (מעצב / לוח) - אחרי שלב 1
 -- אל תריץ יחד עם paste_crm_layout_supabase.sql בלי לבדוק
 -- =============================================================================
+-- אם PASTE_01 לא הורץ / נעצר לפני custom_field_* — הבלוק הבא יזין את המינימום
+-- (אידמפוטנטי, תואם PASTE_01). עדיין מומלץ: supabase/PASTE_01_CORE.sql במלואו
+-- ---------------------------------------------------------------------------
+
+create extension if not exists "pgcrypto";
+
+create table if not exists public.custom_field_sections (
+  id uuid primary key default gen_random_uuid (),
+  title text not null,
+  sort_order int not null default 0,
+  created_at timestamptz not null default now ()
+);
+
+alter table public.custom_field_sections enable row level security;
+
+drop policy if exists "custom_field_sections_allow_all_anon" on public.custom_field_sections;
+drop policy if exists "custom_field_sections_allow_all_authenticated" on public.custom_field_sections;
+
+create policy "custom_field_sections_allow_all_anon"
+  on public.custom_field_sections
+  for all
+  to anon
+  using (true)
+  with check (true);
+
+create policy "custom_field_sections_allow_all_authenticated"
+  on public.custom_field_sections
+  for all
+  to authenticated
+  using (true)
+  with check (true);
+
+create table if not exists public.custom_field_definitions (
+  id uuid primary key default gen_random_uuid (),
+  label text not null,
+  slug text not null unique,
+  field_type text not null default 'text',
+  section_id uuid references public.custom_field_sections (id) on delete set null,
+  row_number int not null default 1,
+  column_span int not null default 4,
+  options jsonb not null default '[]'::jsonb,
+  sort_order int not null default 0,
+  created_at timestamptz not null default now (),
+  constraint custom_field_definitions_column_span_check check (
+    column_span >= 1
+    and column_span <= 4
+  ),
+  constraint custom_field_definitions_field_type_check check (
+    field_type in ('text', 'number', 'date', 'select')
+  )
+);
+
+alter table public.custom_field_definitions enable row level security;
+
+drop policy if exists "custom_field_definitions_allow_all_anon" on public.custom_field_definitions;
+drop policy if exists "custom_field_definitions_allow_all_authenticated" on public.custom_field_definitions;
+
+create policy "custom_field_definitions_allow_all_anon"
+  on public.custom_field_definitions
+  for all
+  to anon
+  using (true)
+  with check (true);
+
+create policy "custom_field_definitions_allow_all_authenticated"
+  on public.custom_field_definitions
+  for all
+  to authenticated
+  using (true)
+  with check (true);
 
 -- >>>>>>>>>>>>>>>>>> BEGIN: add_field_groups_layout.sql <<<<<<<<<<<<<<<<<<
 -- CRM layout: field_groups + extended custom_field_definitions. Run in Supabase SQL Editor.
@@ -91,6 +161,84 @@ comment on column public.custom_field_definitions.options is 'לשדה select: �
 -- Run after custom_field_sections exists. After add_crm_layout_sections.sql,
 -- section_id references crm_layout_sections (re-run FK migration if needed).
 
+do $$
+declare
+  n bigint;
+begin
+  if to_regclass ('public.crm_layout_slots') is null then
+    return;
+  end if;
+
+  if exists (
+    select
+      1
+    from information_schema.columns
+    where
+      table_schema = 'public'
+      and table_name = 'crm_layout_slots'
+      and column_name = 'definition_id'
+  ) then
+    return;
+  end if;
+
+  if exists (
+    select
+      1
+    from information_schema.columns
+    where
+      table_schema = 'public'
+      and table_name = 'crm_layout_slots'
+      and column_name = 'field_id'
+  ) then
+    alter table public.crm_layout_slots rename column field_id to definition_id;
+
+    return;
+  end if;
+
+  if exists (
+    select
+      1
+    from information_schema.columns
+    where
+      table_schema = 'public'
+      and table_name = 'crm_layout_slots'
+      and column_name = 'custom_field_definition_id'
+  ) then
+    alter table public.crm_layout_slots rename column custom_field_definition_id to definition_id;
+
+    return;
+  end if;
+
+  if exists (
+    select
+      1
+    from information_schema.columns
+    where
+      table_schema = 'public'
+      and table_name = 'crm_layout_slots'
+      and column_name = 'custom_field_id'
+  ) then
+    alter table public.crm_layout_slots rename column custom_field_id to definition_id;
+
+    return;
+  end if;
+
+  select
+    count(*)::bigint
+    into
+      n
+  from
+    public.crm_layout_slots;
+
+  if n = 0 then
+    drop table public.crm_layout_slots cascade;
+  else
+    raise exception
+      'crm_layout_slots has rows but no definition_id (or field_id to rename). Inspect columns or truncate and re-run.';
+  end if;
+end
+$$;
+
 create table if not exists public.crm_layout_slots (
   id uuid primary key default gen_random_uuid (),
   section_id uuid not null references public.custom_field_sections (id) on delete cascade,
@@ -119,6 +267,30 @@ create table if not exists public.crm_layout_slots (
     )
   )
 );
+
+alter table public.crm_layout_slots
+add column if not exists section_id uuid references public.custom_field_sections (id) on delete cascade;
+
+alter table public.crm_layout_slots
+add column if not exists row_number int not null default 1;
+
+alter table public.crm_layout_slots
+add column if not exists column_span int not null default 4;
+
+alter table public.crm_layout_slots
+add column if not exists sort_order int not null default 0;
+
+alter table public.crm_layout_slots
+add column if not exists slot_kind text not null default 'custom';
+
+alter table public.crm_layout_slots
+add column if not exists core_key text;
+
+alter table public.crm_layout_slots
+add column if not exists definition_id uuid references public.custom_field_definitions (id) on delete cascade;
+
+alter table public.crm_layout_slots
+add column if not exists created_at timestamptz not null default now ();
 
 create unique index if not exists crm_layout_slots_definition_id_key
   on public.crm_layout_slots (definition_id)

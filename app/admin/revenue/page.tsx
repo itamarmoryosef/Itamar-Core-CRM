@@ -356,10 +356,12 @@ export default function AdminRevenuePage() {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const { data, error } = await supabase
-        .from("lead_providers")
-        .select("id, name, phone, commission_percent")
-        .order("name", { ascending: true });
+      const { loadLeadProviderRows } = await import(
+        "@/lib/leadProvidersClientQuery"
+      );
+      const { data, error } = await loadLeadProviderRows(supabase, {
+        organizationId: null,
+      });
       if (cancelled) return;
       if (error) {
         setLeadProviders([]);
@@ -386,15 +388,14 @@ export default function AdminRevenuePage() {
       )
       .gte("paid_on", rangeStart)
       .lte("paid_on", rangeEnd)
-      .order("paid_on", { ascending: false })
-      .order("created_at", { ascending: false });
+      .order("paid_on", { ascending: false });
 
     if (qErr) {
       setLoading(false);
       setRows([]);
       setError(
         qErr.message.includes("payments") || qErr.code === "42P01"
-          ? `${qErr.message} — הריצו ב-Supabase את הקובץ add_payments_table.sql`
+          ? `${qErr.message} — הריצו ב-Supabase את הקובץ add_payments_table.sql (כולל paid_on ו־created_at).`
           : qErr.message.includes("lead_provider_name")
             ? `${qErr.message} — הריצו add_client_lead_provider_name.sql ב-Supabase`
             : qErr.message.includes("closed_by")

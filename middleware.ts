@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { normalizeSupabaseProjectUrl } from "@/lib/supabaseUrl";
+import { getSupabaseAuthCookieOptions } from "@/lib/supabaseSessionCookies";
 
 export async function middleware(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
@@ -14,6 +15,7 @@ export async function middleware(request: NextRequest) {
   }
 
   const supabase = createServerClient(url, anonKey, {
+    cookieOptions: getSupabaseAuthCookieOptions(),
     cookies: {
       getAll() {
         return request.cookies.getAll();
@@ -41,6 +43,23 @@ export async function middleware(request: NextRequest) {
       const redirectUrl = request.nextUrl.clone();
       redirectUrl.pathname = "/login";
       redirectUrl.searchParams.set("next", pathname);
+      return NextResponse.redirect(redirectUrl);
+    }
+  }
+
+  if (pathname.startsWith("/admin/organizations") && user) {
+    const { data: prof, error: profErr } = await supabase
+      .from("profiles")
+      .select("is_platform_super")
+      .eq("id", user.id)
+      .maybeSingle();
+    if (
+      profErr ||
+      (prof as { is_platform_super?: boolean } | null)?.is_platform_super !== true
+    ) {
+      const redirectUrl = request.nextUrl.clone();
+      redirectUrl.pathname = "/admin/clients";
+      redirectUrl.search = "";
       return NextResponse.redirect(redirectUrl);
     }
   }

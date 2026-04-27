@@ -317,13 +317,13 @@ export default function AdminDashboardPage() {
         </p>
       ) : null}
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <div className="min-h-[280px] rounded-xl border border-slate-100 p-3">
+      <div className="grid min-w-0 gap-6 lg:grid-cols-2">
+        <div className="min-h-[280px] min-w-0 rounded-xl border border-slate-100 p-3">
           <h2 className="mb-2 text-sm font-semibold text-slate-800">
             הכנסות לפי חודש (בטווח)
           </h2>
-          <div className="h-[240px] w-full" dir="ltr">
-            <ResponsiveContainer width="100%" height="100%">
+          <div className="h-[240px] w-full min-w-0" dir="ltr">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
               <BarChart
                 data={monthData}
                 margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
@@ -344,7 +344,7 @@ export default function AdminDashboardPage() {
           </div>
         </div>
 
-        <div className="min-h-[280px] rounded-xl border border-slate-100 p-3">
+        <div className="min-h-[280px] min-w-0 rounded-xl border border-slate-100 p-3">
           <h2 className="mb-2 text-sm font-semibold text-slate-800">
             {pieLabel
               ? `לקוחות לפי «${pieLabel}»`
@@ -355,8 +355,8 @@ export default function AdminDashboardPage() {
               אין נתונים — הגדרו שדה מסוג רשימה או הזינו ערכים בכרטיסי לקוחות.
             </p>
           ) : (
-            <div className="h-[240px] w-full" dir="ltr">
-              <ResponsiveContainer width="100%" height="100%">
+            <div className="h-[240px] w-full min-w-0" dir="ltr">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                 <PieChart>
                   <Pie
                     data={pieSegments}
@@ -383,12 +383,12 @@ export default function AdminDashboardPage() {
         </div>
       </div>
 
-      <div className="min-h-[260px] rounded-xl border border-slate-100 p-3">
+      <div className="min-h-[260px] min-w-0 rounded-xl border border-slate-100 p-3">
         <h2 className="mb-2 text-sm font-semibold text-slate-800">
           התפלגות לקוחות לפי סטטוס
         </h2>
-        <div className="h-[220px] w-full" dir="ltr">
-          <ResponsiveContainer width="100%" height="100%">
+        <div className="h-[220px] w-full min-w-0" dir="ltr">
+          <ResponsiveContainer width="100%" height="100%" minWidth={0}>
             <BarChart
               layout="vertical"
               data={statusData}

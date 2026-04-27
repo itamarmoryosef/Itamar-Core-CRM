@@ -39,8 +39,8 @@ export function buildContentSecurityPolicy(): string {
     "base-uri 'self'",
     "form-action 'self'",
     "frame-ancestors 'self'",
-    /** Next.js + React hydration; tighten with nonces when ready for audit hardening */
-    "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+    /** Next.js + React hydration; Vercel Live/feedback in preview; tighten with nonces for audit */
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://vercel.live",
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' https://fonts.gstatic.com data:",
     /** Tenant logos, storage URLs, signatures (data URLs) */

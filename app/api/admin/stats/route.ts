@@ -181,13 +181,8 @@ export async function GET(req: NextRequest) {
     const msg = e instanceof Error ? e.message : String(e);
     return NextResponse.json({ error: msg }, { status: 500 });
   }
-  if (enabled === null) {
-    return NextResponse.json(
-      { error: "features_not_installed" },
-      { status: 503 }
-    );
-  }
-  if (!orgHasAnyFeature(enabled, DASH_ACCESS)) {
+  /** `null` = אין system_features/organization_feature_map — כמו `useFeatures`: treat as הכל מותר */
+  if (enabled !== null && !orgHasAnyFeature(enabled, DASH_ACCESS)) {
     return NextResponse.json(
       { error: "forbidden: dashboard or revenue feature required" },
       { status: 403 }

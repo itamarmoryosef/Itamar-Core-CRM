@@ -287,7 +287,8 @@ function totalAmountLineDocx(
  */
 export function buildAgreementTemplateData(
   client: AgreementClientSnapshotForDocx,
-  customFieldDefinitionSlugs: readonly string[]
+  customFieldDefinitionSlugs: readonly string[],
+  customFieldTypeBySlug?: Readonly<Record<string, string>> | null
 ): AgreementTemplateData {
   const displayName = displayClientNameFromRow({
     full_name: client.full_name,
@@ -310,7 +311,8 @@ export function buildAgreementTemplateData(
     payment_status: client.payment_status?.trim() ?? "",
     customPlaceholders: customPlaceholdersForDocx(
       client.custom_fields_data,
-      customFieldDefinitionSlugs
+      customFieldDefinitionSlugs,
+      customFieldTypeBySlug ?? null
     ),
   };
 }

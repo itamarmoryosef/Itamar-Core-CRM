@@ -2,6 +2,7 @@
 -- הדבקה ב־Supabase → SQL (אחרי PASTE_01_CORE + PASTE_02/3 לפי הצורך)
 -- + הרצת migrations/add_multi_tenancy_organizations.sql אם משתמשים ב־super/ארגונים
 -- + תבניות הודעות (SMS / WhatsApp): migrations/add_outbound_message_templates.sql
+-- + תשלומים (דף הכנסות / `payments.paid_on`): migrations/add_payments_table.sql
 -- =============================================================================
 
 -- 1) client_statuses.is_active (למסכי סטטוסים + פילטרים)

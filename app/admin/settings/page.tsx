@@ -2,16 +2,21 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import type { LucideIcon } from "lucide-react";
 import {
   Bell,
+  BookOpen,
   Clock,
   Download,
   FileText,
   FileType,
   FileUp,
-  LayoutGrid,
-  Loader2,
   Image,
+  LayoutGrid,
+  ListTree,
+  Loader2,
+  MessageCircle,
+  MessageSquareText,
   Pencil,
   Rows3,
   Save,
@@ -19,10 +24,13 @@ import {
   Sparkles,
   Tags,
   Trash2,
+  UserCog,
   Users,
   X,
 } from "lucide-react";
 import { SettingsHubGrid } from "@/components/admin/SettingsHubGrid";
+import { SettingsCollapsible } from "@/components/admin/SettingsCollapsible";
+import { DocxMergeFieldCodesList } from "@/components/admin/DocxMergeFieldCodesList";
 import {
   ResponsiveDataTable,
   type ResponsiveColumnDef,
@@ -128,6 +136,16 @@ type SettingsRubricKey =
   | "templates"
   | "team";
 
+const RUBRIC_ICONS: Record<SettingsRubricKey, LucideIcon> = {
+  branding: Sparkles,
+  notifications: Bell,
+  reminders: Clock,
+  leads: Users,
+  docTypes: FileType,
+  templates: FileText,
+  team: UserCog,
+};
+
 function isAllowedBlankFormFile(file: File): boolean {
   const n = file.name.toLowerCase();
   if (n.endsWith(".pdf") || n.endsWith(".docx") || n.endsWith(".doc")) {
@@ -220,6 +238,55 @@ export default function AdminSettingsPage() {
     );
   }, [enabledFeatureCodes]);
 
+  const quickNavGroups = useMemo((): {
+    title: string;
+    items: { href: string; label: string; Icon: LucideIcon }[];
+  }[] => {
+    return [
+      {
+        title: "הודעות",
+        items: [
+          {
+            href: "/admin/settings/messages",
+            label: "תבניות הודעות",
+            Icon: MessageSquareText,
+          },
+          {
+            href: "/admin/settings/whatsapp",
+            label: "חיבור WhatsApp",
+            Icon: MessageCircle,
+          },
+        ],
+      },
+      {
+        title: "לקוחות / CRM",
+        items: [
+          { href: "/admin/settings/statuses", label: "ניהול סטטוסים", Icon: Tags },
+          {
+            href: "/admin/settings/layout",
+            label: "שדות ופריסת כרטיס",
+            Icon: LayoutGrid,
+          },
+          {
+            href: "/admin/settings/fields",
+            label: "רשימת שדות (טבלה)",
+            Icon: ListTree,
+          },
+        ],
+      },
+      {
+        title: "מסמכים / פורטל",
+        items: [
+          {
+            href: "/admin/settings/templates",
+            label: "עורך טפסי פורטל",
+            Icon: BookOpen,
+          },
+        ],
+      },
+    ];
+  }, []);
+
   const [brandBusinessName, setBrandBusinessName] = useState("");
   const [brandTagline, setBrandTagline] = useState("");
   const [brandPrimary, setBrandPrimary] = useState("");
@@ -232,26 +299,6 @@ export default function AdminSettingsPage() {
   const [me, setMe] = useState<AdminMeResponse | null>(null);
   const [meLoadDone, setMeLoadDone] = useState(false);
 
-  /**
-   * רק דפי עורך (מבנה/CRM) — ללא כפל עם הלשוניות למטה
-   * (לידים, צוות, Word וכו' נמצאים רק בלשוניות)
-   */
-  const settingsSubpageLinks = useMemo((): {
-    href: string;
-    label: string;
-  }[] => {
-    const u: { href: string; label: string }[] = [
-      { href: "/admin/settings/messages", label: "תבניות הודעות" },
-      { href: "/admin/settings/whatsapp", label: "חיבור WhatsApp" },
-      { href: "/admin/settings/statuses", label: "ניהול סטטוסים" },
-      {
-        href: "/admin/settings/layout",
-        label: "שדות ופריסת כרטיס",
-      },
-      { href: "/admin/settings/templates", label: "עורך טפסי פורטל" },
-    ];
-    return u;
-  }, []);
   const [allOrgs, setAllOrgs] = useState<
     { id: string; name: string; slug: string }[] | null
   >(null);
@@ -1105,13 +1152,6 @@ export default function AdminSettingsPage() {
     "inline-flex items-center justify-center gap-2 rounded-lg bg-brand px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-90 disabled:pointer-events-none disabled:opacity-50";
   const btnSecondary =
     "inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-neutral-800 shadow-sm hover:bg-slate-50 disabled:pointer-events-none disabled:opacity-50";
-  const embedCodes = [
-    { code: "[[full_name]]", label: "שם מלא" },
-    { code: "[[id_number]]", label: "תעודת זהות" },
-    { code: "[[fee_upfront]]", label: "תשלום לפני" },
-    { code: "[[fee_success]]", label: "תשלום אחרי" },
-    { code: "[[date]]", label: "תאריך" },
-  ] as const;
   const leadProviderColumns = useMemo(
     (): ResponsiveColumnDef<LeadProviderRow>[] => [
       {
@@ -1220,95 +1260,124 @@ export default function AdminSettingsPage() {
           </div>
         ) : null}
 
-        <header className="border-b border-slate-200/80 pb-4">
+        <header className="space-y-1 border-b border-slate-200/80 pb-5">
           <p className="text-start text-xs font-medium uppercase tracking-wide text-slate-500">
             ניהול
           </p>
-          <h1 className="mt-1 text-start text-xl font-bold tracking-tight text-slate-900">
+          <h1 className="text-start text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
             הגדרות מערכת
           </h1>
-          <p className="mt-1.5 text-start text-sm text-slate-600">
-            בחירה מהקנבס למטה — או שימוש בלשוניות (מיתוג, התראות, מסמכים וכו׳).
-            דפי עריכה (סטטוסים, שדות, הודעות) פתוחים בכרטיסים.
+          <p className="text-start text-sm text-slate-600 dark:text-slate-400">
+            מרכז אחד: ניווט מהיר לדפי עריכה, לשוניות להגדרות בדף זה, ולוח מודולים.
+            יצירת משתמש: לשונית <strong className="font-medium">ניהול צוות</strong>.
           </p>
         </header>
 
-        <section
-          className="rounded-2xl border border-slate-200/80 bg-slate-50/40 p-4 shadow-sm sm:p-6 dark:border-zinc-800 dark:bg-zinc-900/20"
-          aria-label="בחירת מודולים"
-        >
-          <div className="mb-4 text-start">
-            <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">
-              מרכז הגדרות
-            </h2>
-            <p className="mt-0.5 text-sm text-slate-600 dark:text-slate-400">
-              אותו סגנון כרטיס־רשת כמו «יועצים CRM» — הכל במקום אחד מסודר.
-            </p>
-          </div>
-          <SettingsHubGrid
-            enabledFeatureCodes={enabledFeatureCodes}
-            onPickRubric={(k) => {
-              setActiveRubric(k);
-              if (typeof window !== "undefined") {
-                window.location.hash = k;
-              }
-            }}
-          />
-        </section>
+        <div className="space-y-4" aria-label="הגדרות — ניווט">
+          <SettingsCollapsible
+            title="ניווט מהיר לדפים"
+            subtitle="מקוטלג לפי נושא — בלי לדפדף במסוף"
+            defaultOpen
+          >
+            <div className="space-y-5">
+              {quickNavGroups.map((group) => (
+                <div key={group.title} className="space-y-2.5">
+                  <p className="text-start text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                    {group.title}
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {group.items.map(({ href, label, Icon }) => (
+                      <Link
+                        key={href + label}
+                        href={href}
+                        className="inline-flex min-h-10 min-w-0 max-w-full items-center gap-2 rounded-xl border border-slate-200/90 bg-slate-50/90 px-3.5 py-2 text-sm font-medium text-slate-800 shadow-sm transition hover:border-brand/30 hover:bg-white hover:shadow dark:border-zinc-700 dark:bg-zinc-900/60 dark:text-slate-100 dark:hover:border-brand/30 dark:hover:bg-zinc-800"
+                      >
+                        <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white text-slate-600 dark:bg-zinc-800 dark:text-slate-300">
+                          <Icon className="h-4 w-4" aria-hidden />
+                        </span>
+                        <span className="min-w-0 break-words text-start leading-snug">
+                          {label}
+                        </span>
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </SettingsCollapsible>
 
-        <nav
-          className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-xs"
-          aria-label="קישורי שורה מהירים"
-        >
-          <span className="font-medium text-slate-500">קישורי שורה:</span>
-          {settingsSubpageLinks.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className="font-medium text-brand/90 underline-offset-2 hover:underline"
+          <SettingsCollapsible
+            title="הגדרות בדף (לשוניות)"
+            subtitle="המשך — באותו דף, מתחת ללוח"
+            defaultOpen
+          >
+            <div
+              className="flex max-h-[min(32rem,50vh)] flex-col gap-2 overflow-y-auto overflow-x-hidden sm:max-h-none"
+              style={{ WebkitOverflowScrolling: "touch" } as React.CSSProperties}
             >
-              {item.label}
-            </Link>
-          ))}
-        </nav>
+              <p className="text-start text-xs text-slate-500 dark:text-slate-400">
+                סדר: מיתוג, התראות, תזכורות, לידים (אם קיים), מסמכים, Word, צוות
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {rubricButtons.map(([key, label]) => {
+                  const Icon = RUBRIC_ICONS[key];
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => {
+                        setActiveRubric(key);
+                        if (typeof window !== "undefined") {
+                          window.location.hash = key;
+                        }
+                      }}
+                      className={`inline-flex min-h-10 items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-semibold transition ${
+                        activeRubric === key
+                          ? "bg-brand text-white shadow-sm ring-1 ring-brand/20"
+                          : "border border-slate-200 bg-slate-50/90 text-neutral-800 hover:border-slate-300 hover:bg-white dark:border-zinc-600 dark:bg-zinc-800/60 dark:text-slate-100"
+                      }`}
+                    >
+                      <span
+                        className={
+                          activeRubric === key
+                            ? "inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/20 bg-white/20 text-white"
+                            : "inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 dark:border-zinc-600 dark:bg-zinc-800 dark:text-slate-300"
+                        }
+                      >
+                        <Icon
+                          className="h-3.5 w-3.5"
+                          strokeWidth={2.2}
+                          aria-hidden
+                        />
+                      </span>
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </SettingsCollapsible>
 
-        <section aria-labelledby="settings-rubrics-heading" className="space-y-2">
           <div>
-            <h2
-              id="settings-rubrics-heading"
-              className="text-start text-sm font-semibold text-slate-800"
-            >
-              לשוניות מפורטות (אותו דף)
-            </h2>
-            <p className="text-start text-xs text-slate-500">
-              בחרו לשונית להמשך — מיתוג, התראות, תזכורות, ספקי לידים, סוגי
-              מסמכים, Word, צוות. יצירת משתמש: בתוך «ניהול צוות».
-            </p>
-          </div>
-        <div className="rounded-2xl border border-slate-200/80 bg-white p-3 shadow-sm">
-          <div className="flex flex-wrap gap-2">
-            {rubricButtons.map(([key, label]) => (
-              <button
-                key={key}
-                type="button"
-                onClick={() => {
-                  setActiveRubric(key);
-                  if (typeof window !== "undefined") {
-                    window.location.hash = key;
-                  }
-                }}
-                className={`rounded-xl px-3 py-2 text-sm font-semibold transition ${
-                  activeRubric === key
-                    ? "bg-brand text-white shadow-sm"
-                    : "border border-slate-200 bg-slate-50 text-neutral-700 hover:bg-slate-100"
-                }`}
-              >
-                {label}
-              </button>
-            ))}
+            <div className="mb-3 text-start">
+              <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">
+                לוח מודולים
+              </h2>
+              <p className="mt-0.5 text-sm text-slate-600 dark:text-slate-400">
+                כרטיסי קיצור: פתחו קטעים כדי לצלול לרשת או לדפים
+              </p>
+            </div>
+            <SettingsHubGrid
+              enabledFeatureCodes={enabledFeatureCodes}
+              onPickRubric={(k) => {
+                setActiveRubric(k);
+                if (typeof window !== "undefined") {
+                  window.location.hash = k;
+                }
+              }}
+            />
           </div>
         </div>
-        </section>
 
         <div className="grid gap-6 lg:grid-cols-2 lg:gap-8">
           {activeRubric === "branding" ? (
@@ -2247,29 +2316,20 @@ export default function AdminSettingsPage() {
               </h2>
             </div>
             <p className="mt-2 text-start text-sm text-neutral-600 dark:text-neutral-400">
-              קודים קבועים לשדות המובנים בתבניות Word. מומלץ להשתמש בפורמט:
-              <code className="mx-1 rounded bg-neutral-100 px-1.5 py-0.5 text-xs dark:bg-neutral-800">
-                [[...]]
-              </code>
+              לכל שדה שהוגדר ב־
+              <Link
+                href="/admin/settings/layout"
+                className="mx-0.5 font-medium text-brand underline decoration-brand/30 underline-offset-2"
+              >
+                בונה הפריסה
+              </Link>{" "}
+              מוצגים כאן שם וקוד שתילה (מזהה: <code className="rounded bg-neutral-100 px-1 text-xs dark:bg-neutral-800">{"custom_<slug>"}</code>
+              ) להעתקה ל־Word.
             </p>
-            <ul className="mt-4 space-y-2">
-              {embedCodes.map((item) => (
-                <li
-                  key={item.code}
-                  className="flex items-center justify-between gap-3 rounded-lg border border-neutral-200 bg-neutral-50/80 px-3 py-2 dark:border-neutral-700 dark:bg-neutral-950/40"
-                >
-                  <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
-                    {item.label}
-                  </span>
-                  <code
-                    dir="ltr"
-                    className="rounded bg-white px-2 py-1 text-xs font-semibold text-brand"
-                  >
-                    {item.code}
-                  </code>
-                </li>
-              ))}
-            </ul>
+            <DocxMergeFieldCodesList
+              organizationId={activeOrgId}
+              meReady={meLoadDone}
+            />
           </section>
 
             </>

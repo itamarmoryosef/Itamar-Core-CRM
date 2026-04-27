@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { normalizeCustomFieldSlugInput } from "@/lib/customFieldsTemplate";
 import {
   buildAgreementTemplateData,
   populateDocxTemplateToHtml,
@@ -32,16 +33,32 @@ export type PortalDocRowLike = {
   original_filename: string | null;
 };
 
-async function loadCustomFieldDefinitionSlugs(
+function metaRowsToSlugsAndTypes(
+  data: { slug?: string; field_type?: string }[] | null
+): { slugs: string[]; typeBySlug: Record<string, string> } {
+  const typeBySlug: Record<string, string> = {};
+  const slugs: string[] = [];
+  for (const r of data ?? []) {
+    const raw = (r.slug ?? "").trim();
+    if (!raw) continue;
+    const key = normalizeCustomFieldSlugInput(raw);
+    if (!key) continue;
+    typeBySlug[key] = String((r as { field_type?: string }).field_type ?? "text");
+    slugs.push(raw);
+  }
+  return { slugs, typeBySlug };
+}
+
+async function loadCustomFieldDefinitionMeta(
   supabase: SupabaseClient
-): Promise<string[]> {
+): Promise<{ slugs: string[]; typeBySlug: Record<string, string> }> {
   const { data, error } = await supabase
     .from("custom_field_definitions")
-    .select("slug");
-  if (error || !data) return [];
-  return (data as { slug: string }[])
-    .map((r) => r.slug?.trim())
-    .filter((s): s is string => Boolean(s));
+    .select("slug, field_type");
+  if (error || !data) return { slugs: [], typeBySlug: {} };
+  return metaRowsToSlugsAndTypes(
+    data as { slug?: string; field_type?: string }[]
+  );
 }
 
 /**
@@ -51,7 +68,8 @@ export async function refreshTemplateAgreementHtml(
   supabase: SupabaseClient,
   client: PortalClientRowLike,
   customFieldsData: unknown,
-  customFieldDefinitionSlugs?: string[]
+  customFieldDefinitionSlugs?: string[],
+  customFieldTypeBySlug?: Record<string, string> | null
 ): Promise<string | null> {
   const orderedIds = normalizedAgreementTemplateIds(
     client.agreement_template_ids
@@ -100,15 +118,23 @@ export async function refreshTemplateAgreementHtml(
   if (!arrayBuffer || arrayBuffer.byteLength === 0) return null;
 
   try {
-    const slugList =
-      customFieldDefinitionSlugs ??
-      (await loadCustomFieldDefinitionSlugs(supabase));
+    let slugList = customFieldDefinitionSlugs;
+    let typeBySlug = customFieldTypeBySlug;
+    if (!slugList) {
+      const m = await loadCustomFieldDefinitionMeta(supabase);
+      slugList = m.slugs;
+      typeBySlug = typeBySlug ?? m.typeBySlug;
+    } else if (typeBySlug == null) {
+      const m = await loadCustomFieldDefinitionMeta(supabase);
+      typeBySlug = m.typeBySlug;
+    }
     const templateData = buildAgreementTemplateData(
       {
         ...client,
         custom_fields_data: customFieldsData,
       },
-      slugList
+      slugList,
+      typeBySlug ?? null
     );
     const populated = await populateDocxTemplateToHtml(
       arrayBuffer,
@@ -125,7 +151,8 @@ export async function refreshDocumentRowDocxHtml(
   client: PortalClientRowLike,
   docRow: PortalDocRowLike,
   customFieldsData: unknown,
-  customFieldDefinitionSlugs?: string[]
+  customFieldDefinitionSlugs?: string[],
+  customFieldTypeBySlug?: Record<string, string> | null
 ): Promise<string | null> {
   const uploadPath =
     resolveDocumentsUploadStoragePath(
@@ -155,15 +182,23 @@ export async function refreshDocumentRowDocxHtml(
   if (!isDocx) return null;
 
   try {
-    const slugList =
-      customFieldDefinitionSlugs ??
-      (await loadCustomFieldDefinitionSlugs(supabase));
+    let slugList = customFieldDefinitionSlugs;
+    let typeBySlug = customFieldTypeBySlug;
+    if (!slugList) {
+      const m = await loadCustomFieldDefinitionMeta(supabase);
+      slugList = m.slugs;
+      typeBySlug = typeBySlug ?? m.typeBySlug;
+    } else if (typeBySlug == null) {
+      const m = await loadCustomFieldDefinitionMeta(supabase);
+      typeBySlug = m.typeBySlug;
+    }
     const templateData = buildAgreementTemplateData(
       {
         ...client,
         custom_fields_data: customFieldsData,
       },
-      slugList
+      slugList,
+      typeBySlug ?? null
     );
     const populated = await populateDocxTemplateToHtml(buf, templateData);
     return stripClientIdentitySummaryFromAgreementHtml(populated.html);

@@ -41,11 +41,6 @@ function scalarFromRow(
   }
 
   const key = source.key;
-  if (key === "crm_status") {
-    const v = row.status_id ?? row.crm_status;
-    return v == null ? "" : String(v).trim();
-  }
-
   const nk = key;
   const camel = nk.replace(/_([a-z])/g, (_, ch: string) => ch.toUpperCase());
   const candidates = [nk, camel];

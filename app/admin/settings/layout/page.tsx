@@ -53,6 +53,7 @@ import {
   crmAdminColumnSpanToGrid12,
   crmFieldTypeHebrewLabel,
   normalizeCrmFieldType,
+  parseCrmSelectOptions,
 } from "@/lib/crmFieldLayout";
 import {
   CRM_CORE_FIELD_KEYS,
@@ -135,11 +136,80 @@ const CANVAS_FIELD_FRAME =
 const CANVAS_FIELD_ACCENT =
   "pointer-events-none absolute end-0 top-0 bottom-0 z-[1] w-[3px] bg-sky-500/95";
 
-function CanvasFieldShell({ children }: { children: React.ReactNode }) {
+const CANVAS_FIELD_INNER_STACK =
+  "relative z-0 flex min-h-9 min-w-0 max-h-none flex-col items-stretch justify-center gap-1.5 py-1 ps-2 pe-2";
+
+function CanvasFieldShell({
+  children,
+  stack = false,
+}: {
+  children: React.ReactNode;
+  stack?: boolean;
+}) {
   return (
     <div className={CANVAS_FIELD_FRAME}>
       <span className={CANVAS_FIELD_ACCENT} aria-hidden />
-      <div className={BUILDER_CHIP_INNER}>{children}</div>
+      <div className={stack ? CANVAS_FIELD_INNER_STACK : BUILDER_CHIP_INNER}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function LayoutBuilderCustomFieldPreview({ field }: { field: CustomFieldRow }) {
+  const t = normalizeCrmFieldType(field.field_type);
+  const typeLabel = crmFieldTypeHebrewLabel(t);
+  const mainLabel = field.label?.trim() ? field.label : "שדה";
+
+  if (t === "select") {
+    return (
+      <>
+        <p className="w-full min-w-0 line-clamp-1 text-start text-[9px] font-medium leading-tight text-sky-950 dark:text-sky-100">
+          {mainLabel}
+        </p>
+        <div
+          className="flex w-full min-h-7 min-w-0 items-center justify-between gap-1.5 rounded border border-slate-200/90 bg-white px-1.5 text-start text-[9px] text-slate-500 shadow-[inset_0_1px_0_rgba(15,23,42,0.04)] dark:border-slate-600 dark:bg-slate-900/85 dark:text-slate-400"
+          role="presentation"
+        >
+          <span className="min-w-0 flex-1 truncate">בחר אפשרות...</span>
+          <ChevronDown className="h-3 w-3 shrink-0 text-slate-400" aria-hidden />
+        </div>
+        <p className="w-full min-w-0 line-clamp-1 text-start text-[7.5px] font-medium text-sky-800/80 dark:text-sky-200/80">
+          {typeLabel}
+        </p>
+      </>
+    );
+  }
+  if (t === "multi_select") {
+    const rawOpts = parseCrmSelectOptions(field.options);
+    const badges =
+      rawOpts.length >= 2
+        ? rawOpts.slice(0, 3)
+        : ["לדוגמה 1", "לדוגמה 2", "לדוגמה 3"].slice(0, 3);
+    return (
+      <>
+        <p className="w-full min-w-0 line-clamp-1 text-start text-[9px] font-medium leading-tight text-sky-950 dark:text-sky-100">
+          {mainLabel}
+        </p>
+        <div className="flex w-full min-w-0 flex-wrap gap-1" role="presentation">
+          {badges.map((text, i) => (
+            <span
+              key={`${i}:${text}`}
+              className="max-w-full truncate rounded-md bg-slate-200/95 px-1.5 py-0.5 text-start text-[8px] font-medium text-slate-800 dark:bg-slate-600/60 dark:text-slate-100"
+            >
+              {text}
+            </span>
+          ))}
+        </div>
+        <p className="w-full min-w-0 line-clamp-1 text-start text-[7.5px] font-medium text-sky-800/80 dark:text-sky-200/80">
+          {typeLabel}
+        </p>
+      </>
+    );
+  }
+  return (
+    <div className="min-w-0 flex-1 truncate text-xs font-medium text-sky-950 dark:text-sky-100">
+      {mainLabel}
     </div>
   );
 }
@@ -733,10 +803,17 @@ function DraggablePaletteDefChip({
       {...attributes}
       className={`touch-none ${isDragging ? "opacity-55" : ""} cursor-grab active:cursor-grabbing`}
     >
-      <div className="flex min-h-9 min-w-[6.75rem] max-w-[11rem] items-center gap-1.5 rounded-lg border border-sky-800/20 bg-sky-600 px-2.5 py-1.5 text-start text-xs font-medium text-white shadow-sm hover:bg-sky-700">
-        <GripVertical className="h-3.5 w-3.5 shrink-0 text-white/85" />
-        <span className="min-w-0 flex-1 truncate">
-          {field.label?.trim() ? field.label : "שדה"}
+      <div className="flex min-h-9 min-w-[6.75rem] max-w-[11rem] items-start gap-1.5 rounded-lg border border-sky-800/20 bg-sky-600 px-2.5 py-1.5 text-start text-xs font-medium text-white shadow-sm hover:bg-sky-700">
+        <GripVertical className="h-3.5 w-3.5 shrink-0 text-white/85 mt-0.5" />
+        <span className="min-w-0 flex-1 min-h-[2.25rem] flex flex-col justify-center gap-0.5 text-start">
+          <span className="line-clamp-2 w-full text-[11px] leading-tight">
+            {field.label?.trim() ? field.label : "שדה"}
+          </span>
+          <span className="line-clamp-1 w-full text-[8px] font-medium text-white/80">
+            {crmFieldTypeHebrewLabel(
+              normalizeCrmFieldType(field.field_type)
+            )}
+          </span>
         </span>
       </div>
     </div>
@@ -843,6 +920,8 @@ const QUICK_ADDABLE_TYPES: CrmFieldType[] = [
   "number",
   "date",
   "select",
+  "multi_select",
+  "yes_no",
   "calculation",
 ];
 
@@ -1180,8 +1259,14 @@ export default function AdminCrmLayoutBuilderPage() {
       setToast({ type: "error", message: "נא שם לשדה" });
       return;
     }
-    if (quickAddType === "select" && !quickAddOptions.trim()) {
-      setToast({ type: "error", message: "לרשימה — הזינו אפשרות בכל שורה" });
+    if (
+      (quickAddType === "select" || quickAddType === "multi_select") &&
+      !quickAddOptions.trim()
+    ) {
+      setToast({
+        type: "error",
+        message: "לרשימה — הזינו אפשרות (שורה לכל בחירה)",
+      });
       return;
     }
     const secId = toolbarTargetSectionId ?? sortedSections[0]!.id;
@@ -1213,7 +1298,10 @@ export default function AdminCrmLayoutBuilderPage() {
       .split("\n")
       .map((l) => l.trim())
       .filter(Boolean);
-    const optionsPayload = quickAddType === "select" ? optionsLines : [];
+    const optionsPayload =
+      quickAddType === "select" || quickAddType === "multi_select"
+        ? optionsLines
+        : [];
     setQuickAddSaving(true);
     const field_type: CrmFieldType = quickAddType;
     const baseRow = {
@@ -1929,6 +2017,9 @@ export default function AdminCrmLayoutBuilderPage() {
                         ? fieldById.get(sl.definition_id)
                         : undefined;
                       if (!f) return null;
+                      const previewFieldType = normalizeCrmFieldType(
+                        f.field_type
+                      );
                       return (
                         <div
                           key={sl.id}
@@ -1937,10 +2028,13 @@ export default function AdminCrmLayoutBuilderPage() {
                           )}
                         >
                           <div className="pointer-events-none opacity-95">
-                            <CanvasFieldShell>
-                              <div className="min-w-0 flex-1 truncate text-xs font-medium text-sky-950 dark:text-sky-100">
-                                {f.label?.trim() ? f.label : "שדה"}
-                              </div>
+                            <CanvasFieldShell
+                              stack={
+                                previewFieldType === "select" ||
+                                previewFieldType === "multi_select"
+                              }
+                            >
+                              <LayoutBuilderCustomFieldPreview field={f} />
                             </CanvasFieldShell>
                           </div>
                         </div>
@@ -2367,6 +2461,21 @@ export default function AdminCrmLayoutBuilderPage() {
                           );
                         })}
                       </div>
+                      <div className="pt-2">
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() => addEmptyRow(sec.id)}
+                          className={`${builderAddBarBtnClass} w-full justify-center`}
+                        >
+                          <Plus className="h-4 w-4 shrink-0" aria-hidden />
+                          הוספת שורה
+                        </button>
+                        <p className="mt-1.5 text-center text-[10px] text-slate-500 dark:text-slate-400">
+                          שורה חדשה ריקה; השדה הבא שתוסיפו (ישירות או מהמגירה)
+                          יוצב בשורה זו
+                        </p>
+                      </div>
                     </SortableContext>
                   </LayoutSection>
                 );
@@ -2756,7 +2865,7 @@ export default function AdminCrmLayoutBuilderPage() {
                 required
               />
             </label>
-            {quickAddType === "select" ? (
+            {quickAddType === "select" || quickAddType === "multi_select" ? (
               <label className="mt-2 grid gap-0.5 text-start">
                 <span className="text-[10px] font-semibold text-slate-600">
                   אפשרויות (שורה לכל בחירה)

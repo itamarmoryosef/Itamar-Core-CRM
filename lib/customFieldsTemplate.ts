@@ -7,6 +7,44 @@
  * (see `lib/populateAgreementDocx.ts`).
  */
 
+import {
+  formatCrmDateValueForHebrewDisplay,
+  formatYesNoHebrewForDisplay,
+  normalizeCrmFieldType,
+} from "@/lib/crmFieldLayout";
+
+function scalarFromCustomFieldJsonValue(
+  v: unknown
+): string {
+  if (v == null) return "";
+  if (Array.isArray(v)) {
+    return v
+      .map((x) => (x == null ? "" : String(x).trim()))
+      .filter(Boolean)
+      .join(", ");
+  }
+  if (typeof v === "string") {
+    const t = v.trim();
+    if (t.startsWith("[") && t.endsWith("]")) {
+      try {
+        const p = JSON.parse(t) as unknown;
+        if (Array.isArray(p)) {
+          return p
+            .map((x) => (x == null ? "" : String(x).trim()))
+            .filter(Boolean)
+            .join(", ");
+        }
+      } catch {
+        /* use as string */
+      }
+    }
+    return t;
+  }
+  if (typeof v === "number" && Number.isFinite(v)) return String(v);
+  if (typeof v === "boolean") return v ? "true" : "false";
+  return String(v);
+}
+
 export function parseClientCustomFieldsData(
   raw: unknown
 ): Record<string, string> {
@@ -15,7 +53,7 @@ export function parseClientCustomFieldsData(
   for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
     const slug = k.trim();
     if (!/^[a-zA-Z0-9_]+$/.test(slug)) continue;
-    out[slug] = v == null ? "" : String(v);
+    out[slug] = scalarFromCustomFieldJsonValue(v);
   }
   return out;
 }
@@ -48,10 +86,12 @@ export function customPlaceholdersFromClientJson(
 /**
  * Ensures every defined CRM custom field slug exists as `custom_${slug}` for
  * Docxtemplater (empty string when the client has no stored value).
+ * `fieldTypeBySlug` (slug → `field_type`): `yes_no` → כן/לא; `date` → תאריך he-IL.
  */
 export function customPlaceholdersForDocx(
   raw: unknown,
-  definitionSlugs: readonly string[]
+  definitionSlugs: readonly string[],
+  fieldTypeBySlug?: Readonly<Record<string, string>> | null
 ): Record<string, string> {
   const out = { ...customPlaceholdersFromClientJson(raw) };
   for (const rawSlug of definitionSlugs) {
@@ -59,6 +99,19 @@ export function customPlaceholdersForDocx(
     if (!slug) continue;
     const key = `custom_${slug}`;
     if (!(key in out)) out[key] = "";
+  }
+  if (fieldTypeBySlug) {
+    for (const rawSlug of definitionSlugs) {
+      const slug = normalizeCustomFieldSlugInput(String(rawSlug ?? ""));
+      if (!slug) continue;
+      const key = `custom_${slug}`;
+      const ft = normalizeCrmFieldType(fieldTypeBySlug[slug]);
+      if (ft === "yes_no") {
+        out[key] = formatYesNoHebrewForDisplay(out[key] ?? "");
+      } else if (ft === "date") {
+        out[key] = formatCrmDateValueForHebrewDisplay(out[key] ?? "");
+      }
+    }
   }
   return out;
 }

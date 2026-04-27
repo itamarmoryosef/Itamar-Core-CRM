@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Filter,
   FolderOpen,
@@ -19,12 +19,6 @@ import {
   CLIENT_CRM_STATUS_DEFAULT,
   parseCustomClientCrmStatuses,
 } from "@/lib/clientCrmStatus";
-import { isDefaultPreselectedSignatureTemplate } from "@/lib/defaultSignatureTemplatePreselect";
-import {
-  copyGlobalTemplateToClientDocumentsUpload,
-  isGlobalTemplateForPortalSignature,
-  type GlobalTemplateRow,
-} from "@/lib/copyGlobalTemplateToClientUpload";
 import { LEAD_SOURCE_OPTIONS } from "@/lib/leadSource";
 import { displayClientNameFromRow } from "@/lib/customFieldsTemplate";
 import { resolveClientStatusIdForUpdate } from "@/lib/resolveClientStatusIdForUpdate";
@@ -35,11 +29,6 @@ import {
   type ResponsiveColumnDef,
 } from "@/components/ui/ResponsiveDataTable";
 import { SectionCard } from "@/components/ui/SectionCard";
-
-type DocumentTypeRow = {
-  id: string;
-  name: string;
-};
 
 type LeadProviderOption = {
   id: string;
@@ -101,19 +90,6 @@ function clientMatchesLiveSearch(c: ClientListRow, rawQuery: string): boolean {
 export default function AdminClientsPage() {
   const [addClientOpen, setAddClientOpen] = useState(false);
   const [clientBusy, setClientBusy] = useState(false);
-
-  const [documentTypes, setDocumentTypes] = useState<DocumentTypeRow[]>([]);
-  const [dtLoading, setDtLoading] = useState(false);
-  const [dtError, setDtError] = useState<string | null>(null);
-
-  const [signatureTemplates, setSignatureTemplates] = useState<
-    GlobalTemplateRow[]
-  >([]);
-  const [templatesLoading, setTemplatesLoading] = useState(false);
-  const [templatesError, setTemplatesError] = useState<string | null>(null);
-  const [selectedSignatureTemplateIds, setSelectedSignatureTemplateIds] =
-    useState<Set<string>>(() => new Set());
-  const signatureDefaultsAppliedRef = useRef(false);
 
   const [leadProviders, setLeadProviders] = useState<LeadProviderOption[]>([]);
   const [leadProvidersLoading, setLeadProvidersLoading] = useState(false);
@@ -325,42 +301,6 @@ export default function AdminClientsPage() {
     }
   }, [pipelineTab, clientStatuses]);
 
-  const loadDocumentTypes = useCallback(async () => {
-    setDtLoading(true);
-    setDtError(null);
-    const { data, error } = await supabase
-      .from("document_types")
-      .select("id, name")
-      .order("created_at", { ascending: true });
-
-    setDtLoading(false);
-    if (error) {
-      setDtError(error.message);
-      setDocumentTypes([]);
-      return;
-    }
-    setDocumentTypes((data ?? []) as DocumentTypeRow[]);
-  }, []);
-
-  const loadSignatureTemplates = useCallback(async () => {
-    setTemplatesLoading(true);
-    setTemplatesError(null);
-    const { data, error } = await supabase
-      .from("templates")
-      .select("id, name, original_filename, storage_path")
-      .eq("is_active", true)
-      .order("created_at", { ascending: false });
-
-    setTemplatesLoading(false);
-    if (error) {
-      setTemplatesError(error.message);
-      setSignatureTemplates([]);
-      return;
-    }
-    const rows = (data ?? []) as GlobalTemplateRow[];
-    setSignatureTemplates(rows.filter((r) => r.storage_path?.trim()));
-  }, []);
-
   const loadLeadProviders = useCallback(async () => {
     if (!meLoadDone) return;
     setLeadProvidersLoading(true);
@@ -392,36 +332,9 @@ export default function AdminClientsPage() {
   }, [activeOrgId, meLoadDone]);
 
   useEffect(() => {
-    if (!addClientOpen) {
-      signatureDefaultsAppliedRef.current = false;
-      return;
-    }
-    void loadDocumentTypes();
-    void loadSignatureTemplates();
+    if (!addClientOpen) return;
     void loadLeadProviders();
-  }, [addClientOpen, loadDocumentTypes, loadLeadProviders, loadSignatureTemplates, activeOrgId, meLoadDone]);
-
-  const portalSignatureTemplates = useMemo(
-    () => signatureTemplates.filter((t) => isGlobalTemplateForPortalSignature(t)),
-    [signatureTemplates]
-  );
-
-  useEffect(() => {
-    if (!addClientOpen) {
-      signatureDefaultsAppliedRef.current = false;
-      return;
-    }
-    if (templatesLoading) return;
-    if (signatureDefaultsAppliedRef.current) return;
-    signatureDefaultsAppliedRef.current = true;
-    setSelectedSignatureTemplateIds(
-      new Set(
-        portalSignatureTemplates
-          .filter((t) => isDefaultPreselectedSignatureTemplate(t.name))
-          .map((t) => t.id)
-      )
-    );
-  }, [addClientOpen, portalSignatureTemplates, templatesLoading]);
+  }, [addClientOpen, loadLeadProviders, activeOrgId, meLoadDone]);
 
   const loadClients = useCallback(async () => {
     setListLoading(true);
@@ -511,15 +424,6 @@ export default function AdminClientsPage() {
       ),
     [clientsAfterCloserFilter, clientSearchQuery]
   );
-
-  const toggleSignatureTemplate = (id: string) => {
-    setSelectedSignatureTemplateIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
 
   const handleCrmStatusChange = useCallback(
     async (clientId: string, newStatusId: string) => {
@@ -637,12 +541,6 @@ export default function AdminClientsPage() {
       fd.get("lead_provider_name") ?? ""
     ).trim();
     const closed_by = String(fd.get("closed_by") ?? "").trim() || null;
-    const fee_upfront = String(fd.get("fee_upfront") ?? "").trim();
-    const fee_success = String(fd.get("fee_success") ?? "").trim();
-    const required_docs = fd.getAll("required_docs").map(String);
-
-    const sigIds = Array.from(selectedSignatureTemplateIds);
-    const hasSignatureDocs = sigIds.length > 0;
 
     if (!full_name || !id_number) {
       setToast({
@@ -673,19 +571,14 @@ export default function AdminClientsPage() {
       lead_source: lead_source_raw || null,
       lead_provider_name: lead_provider_name || null,
       closed_by,
-      fee_upfront: fee_upfront || null,
-      fee_success: fee_success || null,
-      required_docs,
+      fee_upfront: null,
+      fee_success: null,
+      required_docs: [],
       status_id: defaultStatus.id,
       upload_request_active: false,
-      agreement_request_active: hasSignatureDocs,
-      agreement_custom_pdf_path: null,
-      agreement_custom_pdf_filename: null,
+      agreement_request_active: false,
       organization_id: activeOrgId,
     };
-    if (hasSignatureDocs) {
-      clientPayload.agreement_source = "from_document";
-    }
 
     const { data: inserted, error } = await insertClientWithShortId(
       supabase,
@@ -705,76 +598,12 @@ export default function AdminClientsPage() {
       return;
     }
 
-    for (const name of required_docs) {
-      const { error: docErr } = await supabase.from("documents").insert({
-        client_id: newClientId,
-        doc_type: name,
-        status: "pending",
-        needs_signature: false,
-      });
-      if (docErr) {
-        setClientBusy(false);
-        setToast({
-          type: "error",
-          message: `הלקוח נוצר; יצירת שורת מסמך עבור "${name}" נכשלה: ${docErr.message}`,
-        });
-        form.reset();
-        setAddClientOpen(false);
-        void loadClients();
-        return;
-      }
-    }
-
-    for (const tid of sigIds) {
-      const template = portalSignatureTemplates.find((t) => t.id === tid);
-      if (!template) continue;
-      const copied = await copyGlobalTemplateToClientDocumentsUpload(
-        supabase,
-        newClientId,
-        template
-      );
-      if ("error" in copied) {
-        setClientBusy(false);
-        setToast({
-          type: "error",
-          message: `הלקוח נוצר; העתקת התבנית "${template.name}" נכשלה: ${copied.error}`,
-        });
-        form.reset();
-        setAddClientOpen(false);
-        void loadClients();
-        return;
-      }
-      const { error: insSigErr } = await supabase.from("documents").insert({
-        client_id: newClientId,
-        doc_type: template.name,
-        status: "uploaded",
-        file_url: copied.publicUrl,
-        storage_path: copied.storagePath,
-        original_filename: copied.originalFilename,
-        needs_signature: true,
-      });
-      if (insSigErr) {
-        setClientBusy(false);
-        setToast({
-          type: "error",
-          message: `הלקוח נוצר; שמירת מסמך חתימה "${template.name}" נכשלה: ${insSigErr.message}`,
-        });
-        form.reset();
-        setAddClientOpen(false);
-        void loadClients();
-        return;
-      }
-    }
-
     setClientBusy(false);
     form.reset();
     setAddClientOpen(false);
-    setSelectedSignatureTemplateIds(new Set());
-    const nReq = required_docs.length;
-    const nSig = sigIds.length;
     setToast({
       type: "success",
-      message: `הלקוח נוצר. ${nReq ? `${nReq} מסמכי תיק (ממתינים להעלאה). ` : ""}${nSig ? `${nSig} מסמכי חתימה מוכנים בפורטל.` : ""} ניתן לשלוח WhatsApp מהרשימה.`,
+      message: "הלקוח נוצר. ניתן לשלוח WhatsApp מהרשימה.",
     });
     void loadClients();
   };
@@ -826,12 +655,7 @@ export default function AdminClientsPage() {
     void loadClients();
   };
 
-  const formCanSubmit =
-    !clientBusy &&
-    !dtLoading &&
-    !templatesLoading &&
-    !templatesError &&
-    clientStatuses.length > 0;
+  const formCanSubmit = !clientBusy && clientStatuses.length > 0;
 
   const crmFilterActiveCount = pipelineTab === "all" ? 0 : 1;
   const closerFilterActiveCount = closerListFilterTrim ? 1 : 0;
@@ -961,8 +785,8 @@ export default function AdminClientsPage() {
               לקוחות
             </h1>
             <p className="text-start text-xs text-neutral-500 dark:text-neutral-400">
-              ממוין מהחדש לישן. לאחר יצירת לקוח עם מסמכי חתימה — כפתור WhatsApp
-              מוכן עם קישור לפורטל.
+              ממוין מהחדש לישן. מרשימת הלקוחות אפשר לשלוח הודעת פתיחה ב־WhatsApp עם
+              קישור לפורטל.
             </p>
           </div>
           <button
@@ -1130,138 +954,6 @@ export default function AdminClientsPage() {
                     ))}
                   </select>
                 </label>
-                <label className="grid gap-1 text-start text-sm">
-                  <span className="font-medium text-neutral-800 dark:text-neutral-200">
-                    סכום לפתיחת תיק (מקדמה)
-                  </span>
-                  <input
-                    name="fee_upfront"
-                    type="text"
-                    placeholder="למשל: 3,000 ₪"
-                    className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm text-neutral-900 dark:border-neutral-600 dark:bg-neutral-950 dark:text-neutral-100"
-                  />
-                </label>
-                <label className="grid gap-1 text-start text-sm">
-                  <span className="font-medium text-neutral-800 dark:text-neutral-200">
-                    סכום לאחר סגירה מוצלחת (שכר הצלחה)
-                  </span>
-                  <input
-                    name="fee_success"
-                    type="text"
-                    placeholder="למשל: 7,000 ₪"
-                    className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm text-neutral-900 dark:border-neutral-600 dark:bg-neutral-950 dark:text-neutral-100"
-                  />
-                </label>
-
-                <fieldset className="sm:col-span-2">
-                  <legend className="mb-2 text-start text-sm font-medium text-neutral-800 dark:text-neutral-200">
-                    מסמכים לחתימה
-                  </legend>
-                  <p className="mb-2 text-start text-xs text-neutral-600 dark:text-neutral-400">
-                    תבניות גלובליות מ־
-                    <Link
-                      href="/admin/settings"
-                      className="mx-0.5 font-medium underline"
-                      onClick={() => setAddClientOpen(false)}
-                    >
-                      הגדרות
-                    </Link>
-                    . ניתן לסמן כמה תבניות PDF או Word ‎(.docx) במקביל — לכל אחת
-                    תיווצר שורה עם קובץ מוכן ו־
-                    <code className="rounded bg-neutral-100 px-1 dark:bg-neutral-800">
-                      needs_signature: true
-                    </code>
-                    . שמות המכילים &quot;הסכם שכר טרחה&quot; או &quot;ייפוי כוח&quot;
-                    מסומנים כברירת מחדל.
-                  </p>
-                  {templatesLoading ? (
-                    <div className="flex items-center gap-2 py-3 text-neutral-600 dark:text-neutral-400">
-                      <Loader2 className="h-5 w-5 animate-spin" aria-hidden />
-                      טוען תבניות…
-                    </div>
-                  ) : templatesError ? (
-                    <p className="text-sm text-red-600">{templatesError}</p>
-                  ) : portalSignatureTemplates.length === 0 ? (
-                    <p className="text-sm text-amber-800 dark:text-amber-200">
-                      אין תבניות PDF או ‎.docx לחתימה. העלו תבניות ב־הגדרות →
-                      תבניות הסכם ‎(.docx) או קבצי PDF מתאימים.
-                    </p>
-                  ) : (
-                    <div className="grid max-h-44 gap-2 overflow-y-auto sm:grid-cols-1">
-                      {portalSignatureTemplates.map((t) => (
-                        <label
-                          key={t.id}
-                          className="flex cursor-pointer items-start gap-2 rounded-lg border border-indigo-200 bg-indigo-50/50 p-3 text-start text-sm dark:border-indigo-900 dark:bg-indigo-950/30"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={selectedSignatureTemplateIds.has(t.id)}
-                            onChange={() => toggleSignatureTemplate(t.id)}
-                            className="mt-1"
-                          />
-                          <span className="text-neutral-800 dark:text-neutral-200">
-                            <span className="font-medium">{t.name}</span>
-                            {t.original_filename?.trim() ? (
-                              <span className="mt-0.5 block text-xs text-neutral-500">
-                                {t.original_filename}
-                              </span>
-                            ) : null}
-                          </span>
-                        </label>
-                      ))}
-                    </div>
-                  )}
-                </fieldset>
-
-                <fieldset className="sm:col-span-2">
-                  <legend className="mb-2 text-start text-sm font-medium text-neutral-800 dark:text-neutral-200">
-                    מסמכים נדרשים מהלקוח (תיק)
-                  </legend>
-                  <p className="mb-3 text-start text-xs text-neutral-600 dark:text-neutral-400">
-                    סימון יוצר שורות placeholder לפי סוג — הלקוח ימלא בפורטל.
-                  </p>
-                  {dtLoading ? (
-                    <div className="flex items-center gap-2 py-4 text-neutral-600 dark:text-neutral-400">
-                      <Loader2 className="h-5 w-5 animate-spin" aria-hidden />
-                      טוען רשימת מסמכים…
-                    </div>
-                  ) : dtError ? (
-                    <p className="text-sm text-red-600">
-                      לא ניתן לטעון סוגי מסמכים. הגדירו ב־
-                      <Link
-                        href="/admin/settings"
-                        className="font-medium underline"
-                        onClick={() => setAddClientOpen(false)}
-                      >
-                        הגדרות מערכת
-                      </Link>
-                      .
-                    </p>
-                  ) : documentTypes.length === 0 ? (
-                    <p className="text-sm text-amber-800 dark:text-amber-200">
-                      אין סוגי מסמכים — הוסיפו בהגדרות.
-                    </p>
-                  ) : (
-                    <div className="grid max-h-40 gap-2 overflow-y-auto sm:grid-cols-2">
-                      {documentTypes.map((dt) => (
-                        <label
-                          key={dt.id}
-                          className="flex cursor-pointer items-start gap-2 rounded-lg border border-neutral-200 bg-neutral-50/80 p-3 text-start text-sm dark:border-neutral-700 dark:bg-neutral-900/30"
-                        >
-                          <input
-                            type="checkbox"
-                            name="required_docs"
-                            value={dt.name}
-                            className="mt-1"
-                          />
-                          <span className="text-neutral-800 dark:text-neutral-200">
-                            {dt.name}
-                          </span>
-                        </label>
-                      ))}
-                    </div>
-                  )}
-                </fieldset>
 
                 <div className="flex flex-col gap-2 sm:col-span-2 sm:flex-row sm:flex-wrap">
                   <button

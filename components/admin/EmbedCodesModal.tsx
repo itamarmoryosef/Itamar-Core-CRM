@@ -4,21 +4,18 @@ import { useEffect, useMemo, useState } from "react";
 import { Check, Copy, Loader2, Search, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import type { PostgrestError } from "@supabase/supabase-js";
-import { normalizeCustomFieldSlugInput } from "@/lib/customFieldsTemplate";
+import { docxPlaceholderForFieldSlug } from "@/lib/docxFieldPlaceholder";
 
 type DefRow = { id: string; label: string; slug: string };
-
-function placeholderForSlug(slug: string): string {
-  const s = normalizeCustomFieldSlugInput(slug);
-  return `{{custom_${s || "slug"}}}`;
-}
 
 export function EmbedCodesModal(props: {
   open: boolean;
   onClose: () => void;
   onCopied: () => void;
+  /** שדות מ־`custom_field_definitions` של הארגון; מחרוזת ריקה = אין טעינה/ארגון */
+  organizationId: string;
 }) {
-  const { open, onClose, onCopied } = props;
+  const { open, onClose, onCopied, organizationId } = props;
   const [rows, setRows] = useState<DefRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [q, setQ] = useState("");
@@ -30,10 +27,16 @@ export function EmbedCodesModal(props: {
       setCopiedSlug(null);
       return;
     }
+    if (!organizationId.trim()) {
+      setLoading(false);
+      setRows([]);
+      return;
+    }
     setLoading(true);
     void supabase
       .from("custom_field_definitions")
       .select("id, label, slug")
+      .eq("organization_id", organizationId)
       .order("label", { ascending: true })
       .then((res: { data: DefRow[] | null; error: PostgrestError | null }) => {
         setLoading(false);
@@ -43,7 +46,7 @@ export function EmbedCodesModal(props: {
         }
         setRows(res.data);
       });
-  }, [open]);
+  }, [open, organizationId]);
 
   useEffect(() => {
     if (!open) return;
@@ -61,12 +64,12 @@ export function EmbedCodesModal(props: {
       (r) =>
         r.label.toLowerCase().includes(s) ||
         r.slug.toLowerCase().includes(s) ||
-        placeholderForSlug(r.slug).toLowerCase().includes(s)
+        docxPlaceholderForFieldSlug(r.slug).toLowerCase().includes(s)
     );
   }, [rows, q]);
 
   const copyRow = async (slug: string) => {
-    const text = placeholderForSlug(slug);
+    const text = docxPlaceholderForFieldSlug(slug);
     try {
       await navigator.clipboard.writeText(text);
       setCopiedSlug(slug);
@@ -136,7 +139,7 @@ export function EmbedCodesModal(props: {
           ) : (
             <ul className="divide-y divide-slate-100 dark:divide-neutral-800">
               {filtered.map((r) => {
-                const ph = placeholderForSlug(r.slug);
+                const ph = docxPlaceholderForFieldSlug(r.slug);
                 const copied = copiedSlug === r.slug;
                 return (
                   <li key={r.id}>

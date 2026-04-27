@@ -1,9 +1,20 @@
 "use client";
 
+import { useId } from "react";
+import { Calendar } from "lucide-react";
 import {
   crmAdminColumnSpanToGrid12,
+  crmLocalTodayYmd,
+  formatCrmDateValueForHebrewDisplay,
+  formatYesNoHebrewForDisplay,
+  isCrmDateYmdBeforeLocalToday,
+  isYesNoAnswered,
   normalizeCrmFieldType,
+  parseCrmDateFieldConfig,
   parseCrmSelectOptions,
+  sanitizeCrmNumberInput,
+  parseMultiSelectStoredValue,
+  serializeMultiSelectValue,
 } from "@/lib/crmFieldLayout";
 import {
   groupTemplateFieldsBySectionAndRow,
@@ -33,6 +44,116 @@ const sectionCardClass =
 
 const sectionCardClassCompact =
   "rounded-lg border border-slate-200/70 bg-white p-2 shadow-sm dark:border-neutral-700 dark:bg-neutral-900";
+
+function PortalDateField({
+  value,
+  onChange,
+  disabled,
+  compact,
+  requireFuture,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  disabled?: boolean;
+  compact: boolean;
+  requireFuture: boolean;
+}) {
+  const errId = useId();
+  const ymd = value.length >= 10 ? value.slice(0, 10) : "";
+  const hebrew = ymd ? formatCrmDateValueForHebrewDisplay(ymd) : "";
+  const filled = ymd.length > 0;
+  const pastInvalid =
+    requireFuture && filled && isCrmDateYmdBeforeLocalToday(ymd);
+  const ariaInvalid = !filled || pastInvalid;
+  const shell = compact
+    ? `mt-0.5 flex w-full h-7 min-h-[1.75rem] items-stretch overflow-hidden rounded border transition focus-within:ring-1 focus-within:ring-slate-200/80 dark:focus-within:ring-neutral-700/50 ${
+        pastInvalid
+          ? "border-amber-500/90 ring-1 ring-amber-300/70 focus-within:border-amber-500 dark:border-amber-500/80 dark:ring-amber-800/50"
+          : "border-slate-200 focus-within:border-slate-300 dark:border-neutral-600"
+      } ${disabled ? "opacity-60" : ""} bg-white dark:bg-neutral-950`
+    : `mt-1.5 flex w-full min-h-[2.5rem] items-stretch overflow-hidden rounded-xl border transition focus-within:ring-2 focus-within:ring-slate-200/80 dark:focus-within:ring-neutral-700/50 ${
+        pastInvalid
+          ? "border-amber-500/90 ring-2 ring-amber-300/60 focus-within:border-amber-500 dark:border-amber-500/80 dark:ring-amber-800/50"
+          : "border-slate-200 focus-within:border-slate-300 dark:border-neutral-600"
+      } ${disabled ? "opacity-60" : ""} bg-white dark:bg-neutral-950`;
+
+  return (
+    <>
+      <div dir="ltr" className={shell}>
+        <div
+          className={
+            compact
+              ? "flex w-7 shrink-0 items-center justify-center border-e border-slate-200/90 bg-slate-50/80 dark:border-neutral-600 dark:bg-neutral-900/50"
+              : "flex w-9 shrink-0 items-center justify-center border-e border-slate-200/90 bg-slate-50/80 dark:border-neutral-600 dark:bg-neutral-900/50"
+          }
+          aria-hidden
+        >
+          <Calendar
+            className={
+              compact
+                ? "h-3.5 w-3.5 text-slate-500 dark:text-slate-400"
+                : "h-4 w-4 text-slate-500 dark:text-slate-400"
+            }
+            strokeWidth={2}
+          />
+        </div>
+        <div className="relative min-w-0 flex-1">
+          <div
+            dir="rtl"
+            className={
+              compact
+                ? "pointer-events-none flex min-h-full items-center px-1.5 py-0.5 text-start leading-none"
+                : "pointer-events-none flex min-h-full items-center px-2 py-1.5 text-start"
+            }
+          >
+            {hebrew ? (
+              <span
+                className={
+                  compact
+                    ? "w-full min-w-0 truncate text-[11px] font-bold text-neutral-900 tabular-nums dark:text-neutral-100"
+                    : "w-full min-w-0 truncate text-sm font-bold text-neutral-900 tabular-nums dark:text-neutral-100"
+                }
+              >
+                {hebrew}
+              </span>
+            ) : (
+              <span
+                className={
+                  compact
+                    ? "w-full text-[11px] text-neutral-400 dark:text-neutral-500"
+                    : "w-full text-sm text-neutral-400 dark:text-neutral-500"
+                }
+              >
+                בחרו תאריך
+              </span>
+            )}
+          </div>
+          <input
+            type="date"
+            className="absolute inset-0 z-10 h-full w-full min-w-0 cursor-pointer opacity-0 disabled:cursor-not-allowed"
+            value={ymd}
+            disabled={disabled}
+            min={requireFuture ? crmLocalTodayYmd() : undefined}
+            onChange={(e) => onChange(e.target.value)}
+            aria-invalid={ariaInvalid}
+            aria-describedby={pastInvalid ? errId : undefined}
+          />
+        </div>
+      </div>
+      {pastInvalid ? (
+        <p
+          id={errId}
+          role="alert"
+          className={`mt-1 text-start font-medium text-amber-800 dark:text-amber-200/95 ${
+            compact ? "text-[10px] leading-tight" : "text-[11px]"
+          }`}
+        >
+          התאריך שנבחר חל בעבר. נא לבחור תאריך מהיום ואילך (למשל מועד פגישה).
+        </p>
+      ) : null}
+    </>
+  );
+}
 
 export function PortalAgreementFormGrid({
   fields,
@@ -104,7 +225,12 @@ export function PortalAgreementFormGrid({
                     const spanClass = crmAdminColumnSpanToGrid12(
                       tf.col_span ?? tf.definition.crm_column_span
                     );
-                    const filled = val.trim().length > 0;
+                    const filled =
+                      t === "multi_select"
+                        ? parseMultiSelectStoredValue(val).length > 0
+                        : t === "yes_no"
+                          ? isYesNoAnswered(val)
+                          : val.trim().length > 0;
                     return (
                       <div
                         key={tf.id}
@@ -123,7 +249,26 @@ export function PortalAgreementFormGrid({
                         </label>
                         {preview ? (
                           <p className={previewBoxCls}>
-                            {val.trim() || "—"}
+                            {t === "multi_select"
+                              ? parseMultiSelectStoredValue(val).join(", ") ||
+                                "—"
+                              : t === "yes_no"
+                                ? formatYesNoHebrewForDisplay(val) || "—"
+                                : t === "date"
+                                  ? (() => {
+                                      const s =
+                                        formatCrmDateValueForHebrewDisplay(
+                                          val
+                                        );
+                                      return s ? (
+                                        <span className="font-bold tabular-nums">
+                                          {s}
+                                        </span>
+                                      ) : (
+                                        "—"
+                                      );
+                                    })()
+                                  : val.trim() || "—"}
                           </p>
                         ) : t === "calculation" ? (
                           <input
@@ -141,22 +286,31 @@ export function PortalAgreementFormGrid({
                           <input
                             type="text"
                             inputMode="decimal"
+                            autoComplete="off"
                             dir="ltr"
                             value={val}
                             disabled={disabled}
-                            onChange={(e) => onChange(slug, e.target.value)}
+                            onChange={(e) =>
+                              onChange(
+                                slug,
+                                sanitizeCrmNumberInput(e.target.value)
+                              )
+                            }
                             placeholder="הזינו מספר"
                             aria-invalid={!filled}
                             className={ctl}
                           />
                         ) : t === "date" ? (
-                          <input
-                            type="date"
-                            value={val.length >= 10 ? val.slice(0, 10) : val}
+                          <PortalDateField
+                            value={val}
+                            onChange={(v) => onChange(slug, v)}
                             disabled={disabled}
-                            onChange={(e) => onChange(slug, e.target.value)}
-                            aria-invalid={!filled}
-                            className={ctl}
+                            compact={compact}
+                            requireFuture={parseCrmDateFieldConfig(
+                              tf.definition.options,
+                              tf.definition.label,
+                              tf.definition.slug
+                            ).requireFuture}
                           />
                         ) : t === "select" ? (
                           <select
@@ -175,6 +329,107 @@ export function PortalAgreementFormGrid({
                               )
                             )}
                           </select>
+                        ) : t === "multi_select" ? (
+                          (() => {
+                            const opts = parseCrmSelectOptions(
+                              tf.definition.options
+                            );
+                            return (
+                              <ul className="mt-1.5 list-none space-y-1.5" role="group">
+                                {opts.map((opt) => {
+                                  const on = parseMultiSelectStoredValue(
+                                    val
+                                  ).includes(opt);
+                                  return (
+                                    <li key={opt}>
+                                      <label
+                                        className={
+                                          compact
+                                            ? "flex cursor-pointer items-center gap-1.5 text-[11px] text-neutral-800 dark:text-neutral-200"
+                                            : "flex cursor-pointer items-center gap-2 text-sm text-neutral-800 dark:text-neutral-200"
+                                        }
+                                      >
+                                        <input
+                                          type="checkbox"
+                                          className="h-4 w-4 shrink-0 rounded border-slate-300"
+                                          disabled={disabled}
+                                          checked={on}
+                                          onChange={() => {
+                                            const cur =
+                                              parseMultiSelectStoredValue(val);
+                                            const set = new Set(cur);
+                                            if (set.has(opt)) {
+                                              set.delete(opt);
+                                            } else {
+                                              set.add(opt);
+                                            }
+                                            const next = opts.filter((o) =>
+                                              set.has(o)
+                                            );
+                                            onChange(
+                                              slug,
+                                              serializeMultiSelectValue(
+                                                next,
+                                                opts
+                                              )
+                                            );
+                                          }}
+                                        />
+                                        {opt}
+                                      </label>
+                                    </li>
+                                  );
+                                })}
+                              </ul>
+                            );
+                          })()
+                        ) : t === "yes_no" ? (
+                          <div
+                            role="radiogroup"
+                            className={
+                              compact
+                                ? "mt-1.5 flex flex-wrap gap-3"
+                                : "mt-1.5 flex flex-wrap gap-4"
+                            }
+                            dir="rtl"
+                          >
+                            <label
+                              className={
+                                compact
+                                  ? "inline-flex cursor-pointer items-center gap-1.5 text-[11px] text-neutral-800 dark:text-neutral-200"
+                                  : "inline-flex cursor-pointer items-center gap-2 text-sm text-neutral-800 dark:text-neutral-200"
+                              }
+                            >
+                              <input
+                                type="radio"
+                                className="h-4 w-4 shrink-0 border-slate-300"
+                                name={`yn_${slug}`}
+                                disabled={disabled}
+                                checked={val === "true"}
+                                onChange={() => onChange(slug, "true")}
+                                aria-invalid={!filled}
+                              />
+                              כן
+                            </label>
+                            <label
+                              className={
+                                compact
+                                  ? "inline-flex cursor-pointer items-center gap-1.5 text-[11px] text-neutral-800 dark:text-neutral-200"
+                                  : "inline-flex cursor-pointer items-center gap-2 text-sm text-neutral-800 dark:text-neutral-200"
+                              }
+                            >
+                              <input
+                                type="radio"
+                                className="h-4 w-4 shrink-0 border-slate-300"
+                                name={`yn_${slug}`}
+                                disabled={disabled}
+                                checked={val === "false"}
+                                onChange={() => onChange(slug, "false")}
+                                aria-invalid={!filled}
+                              />
+                              לא
+                            </label>
+                          </div>
                         ) : (
                           <input
                             type="text"

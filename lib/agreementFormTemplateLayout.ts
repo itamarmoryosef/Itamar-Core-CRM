@@ -1,4 +1,9 @@
 import { parseClientCustomFieldsData } from "@/lib/customFieldsTemplate";
+import {
+  formatCrmDateValueForHebrewDisplay,
+  formatYesNoHebrewForDisplay,
+  normalizeCrmFieldType,
+} from "@/lib/crmFieldLayout";
 
 export type TemplateFieldDefinition = {
   label: string;
@@ -152,9 +157,24 @@ export function buildPdfStructuredRows(
       const slug = tf.definition.slug;
       const raw = (data[slug] ?? "").trim();
       if (hideEmpty && !raw) continue;
+      const ft = normalizeCrmFieldType(tf.definition.field_type);
+      const isYesNo = ft === "yes_no";
+      const isDate = ft === "date";
+      let value: string;
+      if (isYesNo) {
+        value =
+          formatYesNoHebrewForDisplay((data[slug] ?? "")) || EMPTY_PLACEHOLDER;
+      } else if (isDate) {
+        const formatted = formatCrmDateValueForHebrewDisplay(
+          (data[slug] ?? "").trim()
+        );
+        value = formatted || (raw || EMPTY_PLACEHOLDER);
+      } else {
+        value = raw || EMPTY_PLACEHOLDER;
+      }
       cells.push({
         label: tf.definition.label,
-        value: raw || EMPTY_PLACEHOLDER,
+        value,
         colSpan: Math.min(4, Math.max(1, tf.col_span)),
       });
     }

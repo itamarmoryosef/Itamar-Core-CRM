@@ -121,6 +121,9 @@ import {
   crmAdminColumnSpanToGrid12,
   normalizeCrmFieldType,
   parseCrmSelectOptions,
+  parseMultiSelectStoredValue,
+  sanitizeCrmNumberInput,
+  serializeMultiSelectValue,
   stringifyValueForCustomData,
 } from "@/lib/crmFieldLayout";
 import {
@@ -228,19 +231,48 @@ type CustomFieldDefinitionRow = {
   organization_id?: string | null;
 };
 
+function readMultiSelectRawFromClientData(
+  data: unknown,
+  slug: string
+): string {
+  if (data == null || typeof data !== "object" || Array.isArray(data)) {
+    return "";
+  }
+  const v = (data as Record<string, unknown>)[slug];
+  if (v == null) return "";
+  if (Array.isArray(v)) {
+    try {
+      return JSON.stringify(
+        v.map((x) => String(x).trim()).filter(Boolean)
+      );
+    } catch {
+      return "";
+    }
+  }
+  if (typeof v === "string") return v;
+  return String(v);
+}
+
 function buildEditCustomFieldsMap(
   client: ClientDetail,
   defs: readonly CustomFieldDefinitionRow[],
   cfvByDefId: Record<string, string>
 ): Record<string, string> {
   const parsed = parseClientCustomFieldsData(client.custom_fields_data);
+  const raw = client.custom_fields_data;
   const next: Record<string, string> = {};
   for (const def of defs) {
     const defId = String(def.id);
     const fromTable = cfvByDefId[defId];
-    const fromJson = parsed[def.slug] ?? "";
-    next[def.slug] =
-      fromTable !== undefined ? String(fromTable) : fromJson;
+    if (fromTable !== undefined) {
+      next[def.slug] = String(fromTable);
+      continue;
+    }
+    if (normalizeCrmFieldType(def.field_type) === "multi_select") {
+      next[def.slug] = readMultiSelectRawFromClientData(raw, def.slug);
+    } else {
+      next[def.slug] = parsed[def.slug] ?? "";
+    }
   }
   return next;
 }
@@ -1362,13 +1394,20 @@ function AdminClientDetailPageInner() {
       return;
     }
     const parsed = parseClientCustomFieldsData(client.custom_fields_data);
+    const raw = client.custom_fields_data;
     const next: Record<string, string> = {};
     for (const def of customFieldDefinitions) {
       const defId = String(def.id);
       const fromTable = customFieldValuesByDefinitionId[defId];
-      const fromJson = parsed[def.slug] ?? "";
-      next[def.slug] =
-        fromTable !== undefined ? String(fromTable) : fromJson;
+      if (fromTable !== undefined) {
+        next[def.slug] = String(fromTable);
+        continue;
+      }
+      if (normalizeCrmFieldType(def.field_type) === "multi_select") {
+        next[def.slug] = readMultiSelectRawFromClientData(raw, def.slug);
+      } else {
+        next[def.slug] = parsed[def.slug] ?? "";
+      }
     }
     setEditCustomFieldsData(next);
   }, [
@@ -1479,8 +1518,11 @@ function AdminClientDetailPageInner() {
             <input
               type="text"
               inputMode="decimal"
+              autoComplete="off"
               value={val}
-              onChange={(e) => setVal(e.target.value)}
+              onChange={(e) =>
+                setVal(sanitizeCrmNumberInput(e.target.value))
+              }
               disabled={customFieldsSaving}
               className="disabled:opacity-60"
               dir="ltr"
@@ -1507,6 +1549,63 @@ function AdminClientDetailPageInner() {
                 </option>
               ))}
             </select>
+          ) : t === "multi_select" ? (
+            <ul className="grid list-none gap-1.5 py-0.5" role="group">
+              {parseCrmSelectOptions(def.options).map((opt) => {
+                const selected = parseMultiSelectStoredValue(val);
+                const on = selected.includes(opt);
+                return (
+                  <li key={opt}>
+                    <label className="flex cursor-pointer items-center gap-2 text-xs text-slate-800 dark:text-slate-200">
+                      <input
+                        type="checkbox"
+                        className="h-3.5 w-3.5 shrink-0 rounded border-slate-300"
+                        checked={on}
+                        disabled={customFieldsSaving}
+                        onChange={() => {
+                          const opts = parseCrmSelectOptions(def.options);
+                          const set = new Set(parseMultiSelectStoredValue(val));
+                          if (set.has(opt)) set.delete(opt);
+                          else set.add(opt);
+                          const nextArr = opts.filter((o) => set.has(o));
+                          setVal(serializeMultiSelectValue(nextArr, opts));
+                        }}
+                      />
+                      <span>{opt}</span>
+                    </label>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : t === "yes_no" ? (
+            <div
+              role="radiogroup"
+              className="flex flex-wrap gap-3 py-0.5"
+              dir="rtl"
+            >
+              <label className="flex cursor-pointer items-center gap-1.5 text-xs text-slate-800 dark:text-slate-200">
+                <input
+                  type="radio"
+                  className="h-3.5 w-3.5 shrink-0 border-slate-300"
+                  name={`yn-${slug || "f"}`}
+                  checked={val === "true"}
+                  onChange={() => setVal("true")}
+                  disabled={customFieldsSaving}
+                />
+                כן
+              </label>
+              <label className="flex cursor-pointer items-center gap-1.5 text-xs text-slate-800 dark:text-slate-200">
+                <input
+                  type="radio"
+                  className="h-3.5 w-3.5 shrink-0 border-slate-300"
+                  name={`yn-${slug || "f"}`}
+                  checked={val === "false"}
+                  onChange={() => setVal("false")}
+                  disabled={customFieldsSaving}
+                />
+                לא
+              </label>
+            </div>
           ) : (
             <input
               type="text"
@@ -3408,11 +3507,7 @@ function AdminClientDetailPageInner() {
         );
       }
       if (k === "crm_status") {
-        return (
-          <ClientDetailFieldStrip label={lb}>
-            <div className="p-2">{crmStatusPickerCore}</div>
-          </ClientDetailFieldStrip>
-        );
+        return null;
       }
       if (k === "lead_source") {
         return (

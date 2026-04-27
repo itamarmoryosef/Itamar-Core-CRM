@@ -11,13 +11,17 @@ import {
   GripVertical,
   Hash,
   List,
+  ListChecks,
   Loader2,
+  CircleDot,
   Plus,
   Rows3,
   Trash2,
   Type,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import type { AdminMeResponse } from "@/app/api/admin/me/route";
+import { resolveAdminOrganizationId } from "@/lib/orgContextClient";
 import { getLayoutSectionsTableName } from "@/lib/layoutSectionsTable";
 import { sanitizeOriginalFilenameForDb } from "@/lib/storageKey";
 import {
@@ -97,6 +101,10 @@ function FieldTypeIcon({ fieldType }: { fieldType: string }) {
       return <Calendar className={cls} aria-hidden />;
     case "select":
       return <List className={cls} aria-hidden />;
+    case "multi_select":
+      return <ListChecks className={cls} aria-hidden />;
+    case "yes_no":
+      return <CircleDot className={cls} aria-hidden />;
     case "calculation":
       return <Calculator className={cls} aria-hidden />;
     default:
@@ -190,6 +198,46 @@ export default function AgreementTemplatesBuilderPage() {
   const [addFieldDefId, setAddFieldDefId] = useState("");
   const [addFieldRow, setAddFieldRow] = useState(1);
   const [addFieldSpan, setAddFieldSpan] = useState(4);
+
+  const [meLoadDone, setMeLoadDone] = useState(false);
+  const [activeOrgId, setActiveOrgId] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const res = await fetch("/api/admin/me", { credentials: "include" });
+      if (!res.ok) {
+        if (!cancelled) setMeLoadDone(true);
+        return;
+      }
+      const data = (await res.json()) as AdminMeResponse;
+      if (cancelled) return;
+      if (data.platformSuper) {
+        const ores = await fetch("/api/super/organizations", {
+          credentials: "include",
+        });
+        if (ores.ok) {
+          const oj = (await ores.json()) as {
+            organizations: { id: string; name: string; slug: string }[];
+          };
+          setActiveOrgId(
+            resolveAdminOrganizationId(
+              { platformSuper: true, organizationId: data.organizationId },
+              oj.organizations
+            ) ?? data.organizationId
+          );
+        } else {
+          setActiveOrgId(data.organizationId);
+        }
+      } else {
+        setActiveOrgId(data.organizationId);
+      }
+      setMeLoadDone(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!toast) return;
@@ -300,21 +348,29 @@ export default function AgreementTemplatesBuilderPage() {
   }, []);
 
   const loadDefinitions = useCallback(async () => {
+    if (!activeOrgId) {
+      setDefinitions([]);
+      return;
+    }
     const { data, error } = await supabase
       .from("custom_field_definitions")
       .select("id, label, slug, field_type, options, formula")
+      .eq("organization_id", activeOrgId)
       .order("label", { ascending: true });
     if (error) {
       setDefinitions([]);
       return;
     }
     setDefinitions((data ?? []) as CustomDefOption[]);
-  }, []);
+  }, [activeOrgId]);
 
   useEffect(() => {
     void loadTemplates();
+  }, [loadTemplates]);
+
+  useEffect(() => {
     void loadDefinitions();
-  }, [loadTemplates, loadDefinitions]);
+  }, [loadDefinitions]);
 
   const loadFields = useCallback(async (templateId: string) => {
     setFieldsLoading(true);
@@ -854,6 +910,7 @@ export default function AgreementTemplatesBuilderPage() {
         open={embedCodesOpen}
         onClose={() => setEmbedCodesOpen(false)}
         onCopied={() => setEmbedCopiedHint(true)}
+        organizationId={meLoadDone ? (activeOrgId ?? "") : ""}
       />
       {embedCopiedHint ? (
         <div

@@ -92,7 +92,10 @@ import {
 } from "@/lib/agreementFormTemplateLayout";
 import { filterTemplateFieldsByAssignment } from "@/lib/fieldAssignment";
 import { useClientBranding } from "@/components/branding/BrandingRoot";
-import { parseClientCustomFieldsData } from "@/lib/customFieldsTemplate";
+import {
+  normalizeCustomFieldSlugInput,
+  parseClientCustomFieldsData,
+} from "@/lib/customFieldsTemplate";
 import { applyCalculationsToDraft } from "@/lib/crmFormulaEval";
 import { normalizeCrmFieldType } from "@/lib/crmFieldLayout";
 import {
@@ -544,6 +547,9 @@ function ClientPortalImpl({ clientId }: ClientPortalProps) {
   );
   const structureLayoutRef = useRef<TemplateFieldRow[]>([]);
   const customFieldDefinitionSlugsRef = useRef<string[]>([]);
+  const customFieldDefinitionTypeBySlugRef = useRef<Record<string, string>>(
+    {}
+  );
   const [portalFieldDraft, setPortalFieldDraft] = useState<
     Record<string, string>
   >({});
@@ -600,36 +606,55 @@ function ClientPortalImpl({ clientId }: ClientPortalProps) {
       setLoadError("שגיאה בטעינת פרטי הלקוח. נסו שוב מאוחר יותר.");
       setClient(null);
       customFieldDefinitionSlugsRef.current = [];
+      customFieldDefinitionTypeBySlugRef.current = {};
       return;
     }
     if (!data) {
       setLoadError(null);
       setClient(null);
       customFieldDefinitionSlugsRef.current = [];
+      customFieldDefinitionTypeBySlugRef.current = {};
       return;
     }
     setClient(data as ClientRow);
     const row = data as ClientRow;
     const assigned = row.assigned_field_definition_ids;
+    const applySlugMeta = (
+      rows: { slug?: string; field_type?: string }[] | null
+    ) => {
+      const typeBy: Record<string, string> = {};
+      const slugs: string[] = [];
+      for (const r of rows ?? []) {
+        const raw = (r.slug ?? "").trim();
+        if (!raw) continue;
+        const key = normalizeCustomFieldSlugInput(raw);
+        if (!key) continue;
+        typeBy[key] = String(r.field_type ?? "text");
+        slugs.push(raw);
+      }
+      customFieldDefinitionTypeBySlugRef.current = typeBy;
+      customFieldDefinitionSlugsRef.current = slugs;
+    };
     if (assigned == null) {
-      const { data: slugRows } = await supabase
+      const { data: metaRows } = await supabase
         .from("custom_field_definitions")
-        .select("slug");
-      customFieldDefinitionSlugsRef.current = (slugRows as { slug: string }[] | null)
-        ?.map((r) => r.slug?.trim())
-        .filter((s): s is string => Boolean(s)) ?? [];
+        .select("slug, field_type");
+      applySlugMeta(
+        (metaRows ?? null) as { slug?: string; field_type?: string }[] | null
+      );
     } else {
       const ids = (assigned as unknown[]).map((x) => String(x).trim()).filter(Boolean);
       if (ids.length === 0) {
         customFieldDefinitionSlugsRef.current = [];
+        customFieldDefinitionTypeBySlugRef.current = {};
       } else {
-        const { data: slugRows } = await supabase
+        const { data: metaRows } = await supabase
           .from("custom_field_definitions")
-          .select("slug")
+          .select("slug, field_type")
           .in("id", ids);
-        customFieldDefinitionSlugsRef.current = (slugRows as { slug: string }[] | null)
-          ?.map((r) => r.slug?.trim())
-          .filter((s): s is string => Boolean(s)) ?? [];
+        applySlugMeta(
+          (metaRows ?? null) as { slug?: string; field_type?: string }[] | null
+        );
       }
     }
   }, [clientId]);
@@ -1035,7 +1060,8 @@ function ClientPortalImpl({ clientId }: ClientPortalProps) {
                 buf,
                 buildAgreementTemplateData(
                   row,
-                  customFieldDefinitionSlugsRef.current
+                  customFieldDefinitionSlugsRef.current,
+                  customFieldDefinitionTypeBySlugRef.current
                 )
               );
               html = populated.html;
@@ -1257,7 +1283,8 @@ function ClientPortalImpl({ clientId }: ClientPortalProps) {
             arrayBuffer,
             buildAgreementTemplateData(
               row,
-              customFieldDefinitionSlugsRef.current
+              customFieldDefinitionSlugsRef.current,
+              customFieldDefinitionTypeBySlugRef.current
             )
           );
           html = populated.html;
@@ -1934,7 +1961,8 @@ function ClientPortalImpl({ clientId }: ClientPortalProps) {
                 client,
                 docRow,
                 mergedCustomJson,
-                customFieldDefinitionSlugsRef.current
+                customFieldDefinitionSlugsRef.current,
+                customFieldDefinitionTypeBySlugRef.current
               );
               if (freshDocHtml?.trim()) {
                 htmlForSign = freshDocHtml;
@@ -2072,7 +2100,8 @@ function ClientPortalImpl({ clientId }: ClientPortalProps) {
             supabase,
             client,
             mergedCustomJson,
-            customFieldDefinitionSlugsRef.current
+            customFieldDefinitionSlugsRef.current,
+            customFieldDefinitionTypeBySlugRef.current
           );
           if (freshTplHtml?.trim()) {
             htmlForSign = freshTplHtml;

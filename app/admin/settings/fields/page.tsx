@@ -6,6 +6,7 @@ import { ArrowLeft, Copy, LayoutGrid, Loader2, Pencil, Plus, Trash2 } from "luci
 import { supabase } from "@/lib/supabase";
 import { invalidateAdminClientGlobalCatalog } from "@/lib/adminClientGlobalCatalog";
 import {
+  customFieldDocxNormalizedTag,
   customFieldWordPlaceholder,
   ensureUniqueCustomFieldSlug,
   normalizeCustomFieldSlugInput,
@@ -56,6 +57,27 @@ type Toast = { type: "success" | "error"; message: string } | null;
 function sortDefs(a: CustomFieldDef, b: CustomFieldDef) {
   if (a.row_number !== b.row_number) return a.row_number - b.row_number;
   return a.sort_order - b.sort_order;
+}
+
+function fieldTypeContextHint(t: CrmFieldType): string {
+  switch (t) {
+    case "text":
+      return "טקסט חופשי — נשמר ב־JSON. מתאים לשמות, הערות, שדות טקסט כלליים.";
+    case "number":
+      return "מספר — הזנה מספרית; לשדות כמו סכומים או כמויות.";
+    case "date":
+      return "תאריך — בחירה בלוח שנה; ב-Word מוצג לפי עיצוב המסמך.";
+    case "select":
+      return "רשימה — בחירה אחת; שורה לכל אפשרות למטה (חובה).";
+    case "multi_select":
+      return "רשימה — בחירה מרובה (מס’ תיבות); שורה לכל אפשרות (חובה).";
+    case "yes_no":
+      return "כן/לא — בחירה בודדת; ב-Word מוצג «כן» או «לא» (מקום אחד לתג).";
+    case "calculation":
+      return "חישוב — מסתמך על נוסחה; בדרך כלל ללא הזנה ידנית בפורטל.";
+    default:
+      return "";
+  }
 }
 
 export default function CustomFieldsSettingsPage() {
@@ -328,7 +350,9 @@ export default function CustomFieldsSettingsPage() {
     setFSpan(String(d.column_span));
     setFSort(String(d.sort_order));
     setFOptions(
-      d.field_type === "select" ? parseCrmSelectOptions(d.options).join("\n") : ""
+      d.field_type === "select" || d.field_type === "multi_select"
+        ? parseCrmSelectOptions(d.options).join("\n")
+        : ""
     );
     setFFormula(d.formula?.trim() ?? "");
   };
@@ -384,7 +408,9 @@ export default function CustomFieldsSettingsPage() {
       .filter(Boolean);
     const field_type: CrmFieldType = fType;
     const optionsPayload =
-      field_type === "select" ? optionsLines : [];
+      field_type === "select" || field_type === "multi_select"
+        ? optionsLines
+        : [];
 
     if (!activeOrgId) {
       setToast({ type: "error", message: "חסר ארגון (organization)." });
@@ -775,118 +801,128 @@ export default function CustomFieldsSettingsPage() {
             aria-labelledby="field-dialog-h"
           >
             <h3 id="field-dialog-h" className="text-start text-lg font-bold">
-              {fieldModal === "new" ? "שדה חדש" : "עריכת שדה"}
+              {fieldModal === "new" ? "שדה חדש" : "הגדרות — עריכה"}
             </h3>
             <form onSubmit={(e) => void saveField(e)} className="mt-4 space-y-3">
-              <label className="grid gap-1">
-                <span className={labelClass}>תווית</span>
-                <input
-                  className={baseInputClass}
-                  value={fLabel}
-                  onChange={(e) => setFLabel(e.target.value)}
-                  onBlur={onBlurSuggestSlug}
-                  required
-                />
-              </label>
-              <label className="grid gap-1">
-                <span className={labelClass}>מזהה (slug) — JSON / Word</span>
-                <input
-                  className={baseInputClass + " [direction:ltr] text-left"}
-                  dir="ltr"
-                  value={fSlug}
-                  onChange={(e) => setFSlug(e.target.value)}
-                  onBlur={() => setFSlug((s) => normalizeCustomFieldSlugInput(s) || s)}
-                  required
-                />
-              </label>
-              {fSlug ? (
-                <p className="text-xs text-slate-500 [direction:ltr] text-left">
-                  Word:{" "}
-                  <code className="rounded bg-slate-100 px-1 dark:bg-slate-800">
-                    {customFieldWordPlaceholder(fSlug)}
-                  </code>{" "}
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      try {
-                        await navigator.clipboard.writeText(
-                          `custom_${normalizeCustomFieldSlugInput(fSlug)}`
-                        );
-                        setToast({ type: "success", message: "הועתק ל-clipboard" });
-                      } catch {
-                        /* no-op */
-                      }
-                    }}
-                    className="ms-1 text-brand"
-                  >
-                    <Copy className="inline h-3 w-3" /> העתק מפתח
-                  </button>
+              <p className="text-start text-xs text-slate-500 dark:text-slate-400">
+                למטה מוצגים רמזים והתאמות <strong>לסוג</strong> השדה. פריסה ברירת־מחדל
+                (שורה/רוחב) — מתקפלת למטה כי הפריסה העיקרית מוגדרת ב־
+                <Link
+                  className="mx-0.5 font-medium text-brand"
+                  href="/admin/settings/layout"
+                >
+                  בונה הרשת
+                </Link>
+                .
+              </p>
+              <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3 dark:border-slate-600 dark:bg-slate-800/40">
+                <p className="text-start text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                  זהות ותצוגה
                 </p>
-              ) : null}
-              <label className="grid gap-1">
-                <span className={labelClass}>סוג</span>
-                <select
-                  className={baseInputClass}
-                  value={fType}
-                  onChange={(e) => setFType(e.target.value as CrmFieldType)}
-                >
-                  {CRM_FIELD_TYPES.map((t) => (
-                    <option key={t} value={t}>
-                      {crmFieldTypeHebrewLabel(t)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="grid gap-1">
-                <span className={labelClass}>קבוצה (אופציונלי)</span>
-                <select
-                  className={baseInputClass}
-                  value={fSectionId}
-                  onChange={(e) => setFSectionId(e.target.value)}
-                >
-                  <option value="">ללא</option>
-                  {sections.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.title}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <div className="grid grid-cols-3 gap-2">
                 <label className="grid gap-1">
-                  <span className={labelClass}>שורה</span>
+                  <span className={labelClass}>תווית (למשתמשים)</span>
                   <input
-                    type="number"
-                    min={1}
-                    className={baseInputClass + " [direction:ltr]"}
-                    value={fRow}
-                    onChange={(e) => setFRow(e.target.value)}
+                    className={baseInputClass}
+                    value={fLabel}
+                    onChange={(e) => setFLabel(e.target.value)}
+                    onBlur={onBlurSuggestSlug}
+                    required
                   />
                 </label>
                 <label className="grid gap-1">
-                  <span className={labelClass}>רוחב 1–4</span>
+                  <span className={labelClass}>מזהה טכני (slug) — ב-JSON</span>
                   <input
-                    type="number"
-                    min={1}
-                    max={4}
-                    className={baseInputClass + " [direction:ltr]"}
-                    value={fSpan}
-                    onChange={(e) => setFSpan(e.target.value)}
+                    className={baseInputClass + " [direction:ltr] text-left"}
+                    dir="ltr"
+                    value={fSlug}
+                    onChange={(e) => setFSlug(e.target.value)}
+                    onBlur={() => setFSlug((s) => normalizeCustomFieldSlugInput(s) || s)}
+                    required
                   />
                 </label>
-                <label className="grid gap-1">
-                  <span className={labelClass}>מיון</span>
-                  <input
-                    type="number"
-                    className={baseInputClass + " [direction:ltr]"}
-                    value={fSort}
-                    onChange={(e) => setFSort(e.target.value)}
-                  />
-                </label>
+                {fSlug ? (
+                  <div className="rounded-lg border border-slate-200 bg-white p-2 text-start dark:border-slate-600 dark:bg-slate-900">
+                    <span className="text-xs font-medium text-slate-700 dark:text-slate-200">
+                      קוד שתילה להעתקה (Word)
+                    </span>
+                    <div className="mt-1.5 space-y-1.5 [direction:ltr] text-left">
+                      <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-600">
+                        <code className="max-w-full break-all rounded bg-slate-100 px-1.5 py-0.5 text-[10px] dark:bg-slate-800">
+                          {customFieldWordPlaceholder(fSlug)}
+                        </code>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              await navigator.clipboard.writeText(
+                                customFieldWordPlaceholder(fSlug)
+                              );
+                              setToast({ type: "success", message: "התג {{…}} הועתק" });
+                            } catch {
+                              /* no-op */
+                            }
+                          }}
+                          className="inline-flex shrink-0 items-center gap-0.5 rounded text-brand hover:underline"
+                        >
+                          <Copy className="h-3 w-3" /> {`{{…}}`}
+                        </button>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500">
+                        <span className="shrink-0">אחרי עיבוד docx:</span>
+                        <code className="max-w-full break-all rounded bg-slate-100 px-1.5 py-0.5 text-[10px] dark:bg-slate-800">
+                          {customFieldDocxNormalizedTag(fSlug)}
+                        </code>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              await navigator.clipboard.writeText(
+                                customFieldDocxNormalizedTag(fSlug)
+                              );
+                              setToast({ type: "success", message: "התג [[…]] הועתק" });
+                            } catch {
+                              /* no-op */
+                            }
+                          }}
+                          className="inline-flex shrink-0 items-center gap-0.5 text-slate-600 hover:underline"
+                        >
+                          <Copy className="h-3 w-3" /> [[…]]
+                        </button>
+                      </div>
+                    </div>
+                    <p className="mt-1 text-[10px] text-slate-500">
+                      מפתח ב-JSON:{" "}
+                      <code className="rounded bg-slate-100 px-0.5 dark:bg-slate-800">
+                        {`custom_${normalizeCustomFieldSlugInput(fSlug) || "…"}`}
+                      </code>
+                    </p>
+                  </div>
+                ) : null}
               </div>
-              {fType === "select" ? (
+              <div className="space-y-2">
                 <label className="grid gap-1">
-                  <span className={labelClass}>אפשרויות (שורה לכל אחת)</span>
+                  <span className={labelClass}>סוג שדה</span>
+                  <select
+                    className={baseInputClass}
+                    value={fType}
+                    onChange={(e) => setFType(e.target.value as CrmFieldType)}
+                  >
+                    {CRM_FIELD_TYPES.map((t) => (
+                      <option key={t} value={t}>
+                        {crmFieldTypeHebrewLabel(t)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <p className="text-start text-xs leading-relaxed text-slate-600 dark:text-slate-400">
+                  {fieldTypeContextHint(fType)}
+                </p>
+              </div>
+              {fType === "select" || fType === "multi_select" ? (
+                <label className="grid gap-1">
+                  <span className={labelClass}>
+                    אפשרויות (שורה אחת לכל אפשרות) — נדרש
+                  </span>
                   <textarea
                     rows={4}
                     className={baseInputClass + " font-mono text-sm"}
@@ -898,17 +934,94 @@ export default function CustomFieldsSettingsPage() {
               ) : null}
               {fType === "calculation" ? (
                 <label className="grid gap-1">
-                  <span className={labelClass}>נוסחה (למשל לפי slugs)</span>
+                  <span className={labelClass}>
+                    נוסחת חישוב — נדרש לסוג זה
+                  </span>
                   <textarea
                     rows={3}
                     className={baseInputClass + " font-mono text-sm [direction:ltr] text-left"}
                     dir="ltr"
                     value={fFormula}
                     onChange={(e) => setFFormula(e.target.value)}
-                    placeholder="לדוגמה: {{price}} * 1.18"
+                    placeholder="התייחסות ל-slugs/שדות לפי מה שהמנוע מחשב"
                   />
                 </label>
               ) : null}
+              {fType !== "select" &&
+              fType !== "multi_select" &&
+              fType !== "calculation" ? (
+                <p className="rounded-md bg-slate-100/80 px-2 py-1.5 text-start text-[11px] text-slate-600 dark:bg-slate-800/50 dark:text-slate-300">
+                  {fType === "text"
+                    ? "לסוג זה אין אפשרויות נוספות: מילוי בפורטל והטמעה ב-Word."
+                    : fType === "number"
+                      ? "לסוג זה אין אפשרויות נוספות: מספרים בלבד."
+                      : fType === "date"
+                        ? "לסוג זה אין אפשרויות נוספות: בחירת תאריך."
+                        : fType === "yes_no"
+                          ? "לסוג זה אין אפשרויות נוספות: רשומות true/false — במסמך: כן / לא."
+                          : null}
+                </p>
+              ) : null}
+              <details className="group rounded-xl border border-slate-200 bg-slate-50/40 p-0 dark:border-slate-600 dark:bg-slate-800/20">
+                <summary className="cursor-pointer list-none p-3 text-start text-sm font-medium text-slate-800 marker:content-none dark:text-slate-100 [&::-webkit-details-marker]:hidden">
+                  <span className="text-brand underline decoration-brand/30 underline-offset-2 group-open:opacity-90">
+                    פריסה ברירת־מחדל (טבלה / רשימה מתקדמת)
+                  </span>
+                  <span className="mt-0.5 block text-xs font-normal text-slate-500">
+                    קבוצה, שורה, רוחב, מיון — לשימוש ברשימת השדות; הפריסה
+                    הוויזואלית הראשית: בּוֹנֶה הרשת.
+                  </span>
+                </summary>
+                <div className="space-y-3 border-t border-slate-200 px-3 pb-3 pt-2 dark:border-slate-600">
+                  <label className="grid gap-1">
+                    <span className={labelClass}>קבוצה (אופציונלי)</span>
+                    <select
+                      className={baseInputClass}
+                      value={fSectionId}
+                      onChange={(e) => setFSectionId(e.target.value)}
+                    >
+                      <option value="">ללא</option>
+                      {sections.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.title}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <div className="grid grid-cols-3 gap-2">
+                    <label className="grid gap-1">
+                      <span className={labelClass}>שורה</span>
+                      <input
+                        type="number"
+                        min={1}
+                        className={baseInputClass + " [direction:ltr]"}
+                        value={fRow}
+                        onChange={(e) => setFRow(e.target.value)}
+                      />
+                    </label>
+                    <label className="grid gap-1">
+                      <span className={labelClass}>רוחב 1–4</span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={4}
+                        className={baseInputClass + " [direction:ltr]"}
+                        value={fSpan}
+                        onChange={(e) => setFSpan(e.target.value)}
+                      />
+                    </label>
+                    <label className="grid gap-1">
+                      <span className={labelClass}>מיון</span>
+                      <input
+                        type="number"
+                        className={baseInputClass + " [direction:ltr]"}
+                        value={fSort}
+                        onChange={(e) => setFSort(e.target.value)}
+                      />
+                    </label>
+                  </div>
+                </div>
+              </details>
               <div className="flex flex-wrap justify-between gap-2 border-t border-slate-200 pt-3 dark:border-slate-700">
                 {fieldModal !== "new" ? (
                   <button

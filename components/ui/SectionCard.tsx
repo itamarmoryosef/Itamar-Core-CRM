@@ -46,14 +46,14 @@ export function SectionCard({
   const isFieldGroup = variant === "fieldGroup";
 
   const sectionShell = isFieldGroup
-    ? "rounded-xl border border-slate-200/70 bg-white p-5 shadow-sm mb-4 last:mb-0 dark:border-neutral-700 dark:bg-neutral-900"
-    : "rounded-xl border border-slate-200/70 bg-white p-5 shadow-sm dark:border-neutral-700 dark:bg-neutral-900";
+    ? "admin-subpanel-elevate mb-4 rounded-2xl border border-slate-200/50 bg-white/95 p-5 shadow-slate-900/5 last:mb-0 dark:border-neutral-700 dark:bg-neutral-900"
+    : "admin-subpanel-elevate rounded-2xl border border-slate-200/50 bg-white/95 p-5 shadow-slate-900/5 dark:border-neutral-700 dark:bg-neutral-900";
 
   const headerRowClass = isFieldGroup
-    ? "flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between border-b border-slate-100 pb-3 mb-3 dark:border-slate-800"
+    ? "mb-3 flex flex-col gap-2 border-b border-slate-200/60 pb-3 sm:flex-row sm:items-start sm:justify-between dark:border-slate-800"
     : `flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between ${
         withDivider
-          ? "border-b border-slate-100 pb-3 dark:border-slate-800"
+          ? "border-b border-slate-200/60 pb-3 dark:border-slate-800"
           : ""
       }`;
 

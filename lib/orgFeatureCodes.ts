@@ -4,6 +4,8 @@
  */
 export const ORG_FEATURE = {
   revenue: "revenue",
+  /** דשבורד /admin/dashboard (או revenue — שניהם פותחים לפי בקשה) */
+  dashboard: "dashboard",
   statuses: "statuses",
   customFields: "custom_fields",
   settings: "settings",

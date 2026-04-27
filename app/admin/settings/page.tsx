@@ -11,6 +11,8 @@ import {
   FileUp,
   LayoutGrid,
   Loader2,
+  Image,
+  MessageCircle,
   Pencil,
   Rows3,
   Save,
@@ -18,9 +20,12 @@ import {
   Sparkles,
   Tags,
   Trash2,
+  Truck,
+  UserPlus,
   Users,
   X,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import {
   ResponsiveDataTable,
   type ResponsiveColumnDef,
@@ -32,6 +37,7 @@ import {
   parseCustomClientCrmStatuses,
 } from "@/lib/clientCrmStatus";
 import {
+  randomStorageObjectName,
   sanitizeOriginalFilenameForDb,
   timestampedStorageObjectName,
 } from "@/lib/storageKey";
@@ -51,6 +57,32 @@ type DocumentTypeRow = {
 
 const BLANK_FORM_ACCEPT =
   ".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+
+const BRANDING_LOGO_MAX_BYTES = 2 * 1024 * 1024;
+const BRANDING_LOGO_MIME = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/gif",
+  "image/svg+xml",
+]);
+
+/** `input[type=color]` requires #rrggbb; DB may have #RGB or empty. */
+function hexForColorPicker(raw: string, fallback: string): string {
+  const t = raw.trim();
+  if (/^#[0-9A-Fa-f]{6}$/i.test(t)) {
+    return `#${t.slice(1).toLowerCase()}`;
+  }
+  if (/^#[0-9A-Fa-f]{3}$/i.test(t)) {
+    const a = t.slice(1);
+    return `#${a[0]!}${a[0]!}${a[1]!}${a[1]!}${a[2]!}${a[2]!}`.toLowerCase();
+  }
+  const f = fallback.trim();
+  if (/^#[0-9A-Fa-f]{6}$/i.test(f)) {
+    return `#${f.slice(1).toLowerCase()}`;
+  }
+  return "#6366f1";
+}
 
 function guessBlankFormContentType(file: File): string {
   if (file.type && file.type !== "application/octet-stream") {
@@ -197,9 +229,77 @@ export default function AdminSettingsPage() {
   const [brandSecondary, setBrandSecondary] = useState("");
   const [brandLogoUrl, setBrandLogoUrl] = useState("");
   const [brandSaving, setBrandSaving] = useState(false);
+  const [logoUploading, setLogoUploading] = useState(false);
+  const [brandingFileInputKey, setBrandingFileInputKey] = useState(0);
 
   const [me, setMe] = useState<AdminMeResponse | null>(null);
   const [meLoadDone, setMeLoadDone] = useState(false);
+
+  /** לינקים יחידים — אין כפל עם הכותרת; ניווט הועבר מ־AdminShell לכאן */
+  const settingsHubItems = useMemo((): {
+    href: string;
+    label: string;
+    hint: string;
+    icon: LucideIcon;
+  }[] => {
+    const items: {
+      href: string;
+      label: string;
+      hint: string;
+      icon: LucideIcon;
+    }[] = [
+      {
+        href: "/admin/settings/statuses",
+        label: "ניהול סטטוסים",
+        hint: "מזהי UUID, צבע, בוט, is_active",
+        icon: Tags,
+      },
+      {
+        href: "/admin/settings/fields",
+        label: "שדות מותאמים",
+        hint: "קבוצות, סוגי שדות, ייבוא Word",
+        icon: Rows3,
+      },
+      {
+        href: "/admin/settings/layout",
+        label: "פריסת כרטיס לקוח",
+        hint: "רשת, שורות, מחיצות, שדות ליבה",
+        icon: LayoutGrid,
+      },
+      {
+        href: "/admin/settings/templates",
+        label: "מבנה טפסי הסכם (פורטל)",
+        hint: "רשת שדות בטפסי פורטל",
+        icon: FileType,
+      },
+    ];
+    if (checkFeature(enabledFeatureCodes, ORG_FEATURE.leadProviders)) {
+      items.push({
+        href: "/admin/settings#leads",
+        label: "ספקי לידים",
+        hint: "אחוזי עמלה, אנשי קשר",
+        icon: Truck,
+      });
+    }
+    items.push({
+      href: "/admin/settings/whatsapp",
+      label: "חיבור WhatsApp",
+      hint: "שירות נפרד, QR, pairing",
+      icon: MessageCircle,
+    });
+    if (
+      me?.teamAdmin === true &&
+      checkFeature(enabledFeatureCodes, ORG_FEATURE.team)
+    ) {
+      items.push({
+        href: "/admin/team",
+        label: "הזמנת חברי צוות",
+        hint: "יצירת משתמש + סיסמה ראשונית",
+        icon: UserPlus,
+      });
+    }
+    return items;
+  }, [enabledFeatureCodes, me?.teamAdmin]);
   const [allOrgs, setAllOrgs] = useState<
     { id: string; name: string; slug: string }[] | null
   >(null);
@@ -664,36 +764,110 @@ export default function AdminSettingsPage() {
     void loadLeadProviders();
   };
 
-  const handleSaveBranding = async (e: React.FormEvent<HTMLFormElement>) => {
+  const saveBrandingToApi = useCallback(
+    async (opts?: { overrideLogoUrl?: string }) => {
+      const logo = opts?.overrideLogoUrl ?? brandLogoUrl;
+      setBrandSaving(true);
+      try {
+        const res = await fetch("/api/admin/settings", {
+          method: "PATCH",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            branding_business_name: brandBusinessName,
+            branding_tagline: brandTagline,
+            branding_primary: brandPrimary,
+            branding_secondary: brandSecondary,
+            branding_logo_url: logo,
+          }),
+        });
+        const data = (await res.json()) as { error?: string };
+        if (!res.ok) {
+          setToast({ type: "error", message: data.error ?? "שמירת מיתוג נכשלה" });
+          return;
+        }
+        if (opts?.overrideLogoUrl !== undefined) {
+          setBrandLogoUrl(opts.overrideLogoUrl);
+        }
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new Event("crm-branding-updated"));
+          window.dispatchEvent(new Event("alentix-branding-updated"));
+        }
+        setToast({ type: "success", message: "המיתוג נשמור. הממשקים הפתוחים יתעדכנו בלי רענון מלא." });
+      } catch {
+        setToast({ type: "error", message: "שגיאת רשת" });
+      } finally {
+        setBrandSaving(false);
+      }
+    },
+    [brandBusinessName, brandTagline, brandPrimary, brandSecondary, brandLogoUrl]
+  );
+
+  const handleSaveBranding = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    setBrandSaving(true);
+    void saveBrandingToApi();
+  };
+
+  const handleBrandingLogoFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] ?? null;
+    setBrandingFileInputKey((k) => k + 1);
+    if (!file) return;
+    if (!activeOrgId) {
+      setToast({ type: "error", message: "יש לבחור/לזהות ארגון (חוסר organization_id)." });
+      return;
+    }
+    const mime = (file.type || "").toLowerCase();
+    const extOk = /\.(png|jpe?g|webp|gif|svg)$/i.test(file.name);
+    if (mime && !BRANDING_LOGO_MIME.has(mime) && !extOk) {
+      setToast({ type: "error", message: "פורמט: PNG, JPEG, WebP, GIF או SVG בלבד." });
+      return;
+    }
+    if (!mime && !extOk) {
+      setToast({ type: "error", message: "בחרו קובץ תמונה (למשל .png או .svg)." });
+      return;
+    }
+    if (file.size > BRANDING_LOGO_MAX_BYTES) {
+      setToast({ type: "error", message: "הקובץ גדול מדי (מקסימום 2MB)." });
+      return;
+    }
+    setLogoUploading(true);
     try {
-      const res = await fetch("/api/admin/settings", {
-        method: "PATCH",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          branding_business_name: brandBusinessName,
-          branding_tagline: brandTagline,
-          branding_primary: brandPrimary,
-          branding_secondary: brandSecondary,
-          branding_logo_url: brandLogoUrl,
-        }),
-      });
-      const data = (await res.json()) as { error?: string };
-      if (!res.ok) {
-        setToast({ type: "error", message: data.error ?? "שמירת מיתוג נכשלה" });
+      const object = randomStorageObjectName(file.name);
+      const path = `branding/${activeOrgId}/${object}`;
+      const { error: upErr } = await supabase.storage
+        .from("branding")
+        .upload(path, file, {
+          cacheControl: "3600",
+          upsert: true,
+          contentType: mime
+            ? file.type
+            : "application/octet-stream",
+        });
+      if (upErr) {
+        if (
+          upErr.message?.toLowerCase().includes("bucket") ||
+          upErr.message?.toLowerCase().includes("not found")
+        ) {
+          setToast({
+            type: "error",
+            message: `${upErr.message} — ב-Supabase הריצו את migrations/add_branding_storage_bucket.sql`,
+          });
+        } else {
+          setToast({ type: "error", message: upErr.message });
+        }
         return;
       }
-      if (typeof window !== "undefined") {
-        window.dispatchEvent(new Event("crm-branding-updated"));
-        window.dispatchEvent(new Event("alentix-branding-updated"));
+      const { data: pub } = supabase.storage.from("branding").getPublicUrl(path);
+      const publicUrl = pub.publicUrl;
+      if (!publicUrl) {
+        setToast({ type: "error", message: "לא התקבל URL ציבורי ללוגו" });
+        return;
       }
-      setToast({ type: "success", message: "המיתוג נשמור. הממשקים הפתוחים יתעדכנו בלי רענון מלא." });
+      await saveBrandingToApi({ overrideLogoUrl: publicUrl });
     } catch {
-      setToast({ type: "error", message: "שגיאת רשת" });
+      setToast({ type: "error", message: "העלאה נכשלה" });
     } finally {
-      setBrandSaving(false);
+      setLogoUploading(false);
     }
   };
 
@@ -1082,11 +1256,7 @@ export default function AdminSettingsPage() {
   );
 
   return (
-    <div
-      className="min-h-screen bg-neutral-100/90 dark:bg-neutral-950"
-      dir="rtl"
-    >
-      <div className="mx-auto max-w-7xl space-y-8 px-4 py-8 sm:px-6 lg:space-y-10 lg:px-8">
+    <div className="space-y-6" dir="rtl">
         {toast ? (
           <div
             role="status"
@@ -1098,22 +1268,84 @@ export default function AdminSettingsPage() {
           </div>
         ) : null}
 
-        <header className="border-b border-neutral-200 pb-6 dark:border-neutral-800">
-          <p className="text-start text-xs font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+        <header className="border-b border-slate-200/80 pb-5">
+          <p className="text-start text-xs font-medium uppercase tracking-wide text-slate-500">
             ניהול
           </p>
-          <h1 className="mt-1 text-start text-xl font-bold tracking-tight text-neutral-900 dark:text-neutral-50">
+          <h1 className="mt-1 text-start text-xl font-bold tracking-tight text-slate-900">
             הגדרות מערכת
           </h1>
+          <p className="mt-1.5 text-start text-sm text-slate-600">
+            דפים מובנים (למעלה) ואז — הגדרות כלליות באותו דף (לשוניות). אין
+            כפל עם תפריט העל.
+          </p>
         </header>
 
-        <div className="rounded-2xl border border-neutral-200/80 bg-white p-3 shadow-sm dark:border-neutral-800 dark:bg-neutral-900/90">
+        <section
+          className="rounded-2xl border border-slate-200/70 bg-slate-50/40 p-4 sm:p-5"
+          aria-label="הגדרות — דפים ייעודיים"
+        >
+          <h2 className="text-start text-sm font-semibold text-slate-800">
+            דפי הגדרה (מבנה CRM, מסמכים, חיבורים)
+          </h2>
+          <p className="mt-0.5 text-start text-xs text-slate-600">
+            בחרו אזור — מעבר ישיר, ללא כפילויות.
+          </p>
+          <ul className="mt-3 grid list-none gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+            {settingsHubItems.map((item) => {
+              const Icon = item.icon;
+              return (
+                <li key={item.href + item.label}>
+                  <Link
+                    href={item.href}
+                    className="group flex h-full min-h-[4.25rem] flex-col justify-between gap-1 rounded-xl border border-slate-200/80 bg-white p-3.5 text-start shadow-sm transition hover:border-slate-300/90 hover:shadow admin-subpanel-elevate"
+                  >
+                    <span className="flex items-start justify-between gap-2">
+                      <span className="min-w-0 text-sm font-semibold text-slate-900 group-hover:text-brand">
+                        {item.label}
+                      </span>
+                      <span className="shrink-0 rounded-lg border border-slate-100 bg-slate-50 p-1.5 text-slate-600 group-hover:text-brand">
+                        <Icon
+                          className="h-4 w-4"
+                          aria-hidden
+                        />
+                      </span>
+                    </span>
+                    <span className="line-clamp-2 text-start text-xs text-slate-500">
+                      {item.hint}
+                    </span>
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+
+        <section aria-labelledby="settings-rubrics-heading" className="space-y-2">
+          <div>
+            <h2
+              id="settings-rubrics-heading"
+              className="text-start text-sm font-semibold text-slate-800"
+            >
+              הגדרות כלליות (לשוניות)
+            </h2>
+            <p className="text-start text-xs text-slate-500">
+              מיתוג, התראות, תזכורות, סוגי מסמכים, תבניות Word, לידים (אם
+              הופעל) וניהול צוות (עריכה מלאה).
+            </p>
+          </div>
+        <div className="rounded-2xl border border-slate-200/80 bg-white p-3 shadow-sm">
           <div className="flex flex-wrap gap-2">
             {rubricButtons.map(([key, label]) => (
               <button
                 key={key}
                 type="button"
-                onClick={() => setActiveRubric(key)}
+                onClick={() => {
+                  setActiveRubric(key);
+                  if (typeof window !== "undefined") {
+                    window.location.hash = key;
+                  }
+                }}
                 className={`rounded-xl px-3 py-2 text-sm font-semibold transition ${
                   activeRubric === key
                     ? "bg-brand text-white shadow-sm"
@@ -1125,26 +1357,7 @@ export default function AdminSettingsPage() {
             ))}
           </div>
         </div>
-
-        <p className="text-start text-sm text-neutral-600">
-          <span className="me-2 inline">
-            <Link
-              href="/admin/settings/fields"
-              className="font-semibold text-brand underline-offset-2 hover:underline"
-            >
-              שדות מותאמים אישית
-            </Link>
-          </span>
-          <span className="text-neutral-400">|</span>
-          <span className="ms-2 inline">
-            <Link
-              href="/admin/settings/whatsapp"
-              className="font-semibold text-emerald-700 underline-offset-2 hover:underline"
-            >
-              חיבור WhatsApp (שירות נפרד) — סריקת QR ו-Pairing
-            </Link>
-          </span>
-        </p>
+        </section>
 
         <div className="grid gap-6 lg:grid-cols-2 lg:gap-8">
           {activeRubric === "branding" ? (
@@ -1193,30 +1406,99 @@ export default function AdminSettingsPage() {
                     className="rounded-lg border border-neutral-300 bg-neutral-50/80 px-3 py-2 text-neutral-900 dark:border-neutral-600 dark:bg-neutral-950 dark:text-neutral-100"
                   />
                 </label>
-                <label className="grid gap-1.5 text-start text-sm">
-                  <span className="font-medium text-neutral-800 dark:text-neutral-200">צבע ראשי (hex)</span>
-                  <input
-                    type="text"
+                <div className="grid gap-1.5 text-start text-sm">
+                  <span className="font-medium text-neutral-800 dark:text-neutral-200">צבע ראשי</span>
+                  <div
+                    className="flex flex-wrap items-center gap-2 [direction:ltr] sm:max-w-sm"
                     dir="ltr"
-                    value={brandPrimary}
-                    onChange={(e) => setBrandPrimary(e.target.value)}
-                    className="rounded-lg border border-neutral-300 bg-neutral-50/80 px-3 py-2 text-neutral-900 dark:border-neutral-600 dark:bg-neutral-950 dark:text-neutral-100"
-                    placeholder="#0f172a"
-                  />
-                </label>
-                <label className="grid gap-1.5 text-start text-sm">
-                  <span className="font-medium text-neutral-800 dark:text-neutral-200">צבע משני (hex)</span>
-                  <input
-                    type="text"
+                  >
+                    <input
+                      type="color"
+                      value={hexForColorPicker(brandPrimary, "#0f172a")}
+                      onChange={(e) => setBrandPrimary(e.target.value.toLowerCase())}
+                      className="h-10 w-12 shrink-0 cursor-pointer rounded border border-neutral-300 bg-white p-0.5 dark:border-neutral-600"
+                      title="בחירת צבע"
+                      aria-label="בחירת צבע ראשי"
+                    />
+                    <input
+                      type="text"
+                      value={brandPrimary}
+                      onChange={(e) => setBrandPrimary(e.target.value)}
+                      className="min-w-0 flex-1 rounded-lg border border-neutral-300 bg-neutral-50/80 px-2.5 py-1.5 font-mono text-xs text-neutral-900 dark:border-neutral-600 dark:bg-neutral-950 dark:text-neutral-100"
+                      placeholder="#0f172a"
+                      spellCheck={false}
+                    />
+                  </div>
+                </div>
+                <div className="grid gap-1.5 text-start text-sm">
+                  <span className="font-medium text-neutral-800 dark:text-neutral-200">צבע משני</span>
+                  <div
+                    className="flex flex-wrap items-center gap-2 [direction:ltr] sm:max-w-sm"
                     dir="ltr"
-                    value={brandSecondary}
-                    onChange={(e) => setBrandSecondary(e.target.value)}
-                    className="rounded-lg border border-neutral-300 bg-neutral-50/80 px-3 py-2 text-neutral-900 dark:border-neutral-600 dark:bg-neutral-950 dark:text-neutral-100"
-                    placeholder="#2563eb"
-                  />
-                </label>
+                  >
+                    <input
+                      type="color"
+                      value={hexForColorPicker(brandSecondary, "#2563eb")}
+                      onChange={(e) => setBrandSecondary(e.target.value.toLowerCase())}
+                      className="h-10 w-12 shrink-0 cursor-pointer rounded border border-neutral-300 bg-white p-0.5 dark:border-neutral-600"
+                      title="בחירת צבע"
+                      aria-label="בחירת צבע משני"
+                    />
+                    <input
+                      type="text"
+                      value={brandSecondary}
+                      onChange={(e) => setBrandSecondary(e.target.value)}
+                      className="min-w-0 flex-1 rounded-lg border border-neutral-300 bg-neutral-50/80 px-2.5 py-1.5 font-mono text-xs text-neutral-900 dark:border-neutral-600 dark:bg-neutral-950 dark:text-neutral-100"
+                      placeholder="#2563eb"
+                      spellCheck={false}
+                    />
+                  </div>
+                </div>
+                <p className="text-start text-xs text-neutral-500 dark:text-neutral-400 sm:col-span-2">
+                  צבעים: בוחרים בלוח הצבע; שדה ה־# לעריכה מדויקת או הדבקה ממדריך מותג — אופציונלי.
+                </p>
+                <div className="grid gap-2 text-start text-sm sm:col-span-2">
+                  <span className="font-medium text-neutral-800 dark:text-neutral-200">
+                    לוגו
+                  </span>
+                  <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                    מומלץ: העלאת קובץ (נשמר ב-Supabase Storage, נגיש ב־URL ציבורי). לחלופין אפשר להשאיר/להזין
+                    URL חיצוני (CDN, אתר) — מערכת הקוד הישנה הייתה URL בלבד כי אין אחסון בלי שירות
+                    (כעת: bucket <code className="rounded bg-neutral-100 px-0.5 dark:bg-neutral-800">branding</code>).
+                  </p>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <input
+                      key={brandingFileInputKey}
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml,.png,.jpg,.jpeg,.webp,.gif,.svg"
+                      id="branding-logo-upload"
+                      className="sr-only"
+                      onChange={(e) => void handleBrandingLogoFile(e)}
+                      disabled={logoUploading}
+                    />
+                    <label
+                      htmlFor="branding-logo-upload"
+                      className="inline-flex min-h-10 cursor-pointer items-center gap-2 rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-sm font-medium text-neutral-800 shadow-sm hover:bg-neutral-50 has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-50 dark:border-neutral-600 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
+                    >
+                      {logoUploading ? (
+                        <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+                      ) : (
+                        <Image className="h-4 w-4 shrink-0" aria-hidden />
+                      )}
+                      העלאת לוגו
+                    </label>
+                    {brandLogoUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element -- user preview of arbitrary tenant URL
+                      <img
+                        src={brandLogoUrl}
+                        alt="תצוגה מקדימה"
+                        className="h-10 max-w-[10rem] object-contain"
+                      />
+                    ) : null}
+                  </div>
+                </div>
                 <label className="grid gap-1.5 text-start text-sm sm:col-span-2">
-                  <span className="font-medium text-neutral-800 dark:text-neutral-200">URL ללוגו (אופציונלי)</span>
+                  <span className="font-medium text-neutral-800 dark:text-neutral-200">או: URL ללוגו (אופציונלי)</span>
                   <input
                     type="url"
                     dir="ltr"
@@ -1224,12 +1506,13 @@ export default function AdminSettingsPage() {
                     onChange={(e) => setBrandLogoUrl(e.target.value)}
                     className="rounded-lg border border-neutral-300 bg-neutral-50/80 px-3 py-2 text-neutral-900 dark:border-neutral-600 dark:bg-neutral-950 dark:text-neutral-100"
                     placeholder="https://…/logo.png"
+                    autoComplete="off"
                   />
                 </label>
                 <div className="sm:col-span-2">
                   <button
                     type="submit"
-                    disabled={brandSaving}
+                    disabled={brandSaving || logoUploading}
                     className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white shadow-sm hover:opacity-90 disabled:opacity-50"
                   >
                     {brandSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
@@ -2269,7 +2552,6 @@ export default function AdminSettingsPage() {
           </section>
           ) : null}
         </div>
-      </div>
     </div>
   );
 }

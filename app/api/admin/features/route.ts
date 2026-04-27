@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRouteSessionUser } from "@/lib/supabaseAuthRoute";
 import { createServiceRoleSupabase } from "@/lib/supabaseServiceRole";
+import { getOrgEnabledFeatureCodes } from "@/lib/getOrgEnabledFeatureCodes";
 import { isProfilePlatformSuper } from "@/lib/teamAdmin";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -63,51 +64,18 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  const { data: catalog, error: ce } = await admin
-    .from("system_features")
-    .select("id, code, sort_order")
-    .order("sort_order", { ascending: true });
-  if (ce) {
-    const m = ce.message?.toLowerCase() ?? "";
-    if (/relation|does not exist|schema/.test(m)) {
-      return NextResponse.json(
-        { enabledCodes: null as string[] | null, error: "features_not_installed" },
-        { status: 200 }
-      );
-    }
-    return NextResponse.json({ error: ce.message }, { status: 500 });
+  let enabledCodes: string[] | null;
+  try {
+    enabledCodes = await getOrgEnabledFeatureCodes(admin, orgId);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
-
-  const { data: flagRows, error: fe } = await admin
-    .from("organization_feature_map")
-    .select("system_feature_id, enabled")
-    .eq("organization_id", orgId);
-  if (fe) {
-    const m = fe.message?.toLowerCase() ?? "";
-    if (/relation|does not exist|schema/.test(m)) {
-      return NextResponse.json(
-        { enabledCodes: null as string[] | null, error: "features_not_installed" },
-        { status: 200 }
-      );
-    }
-    return NextResponse.json({ error: fe.message }, { status: 500 });
-  }
-
-  const flagMap = new Map(
-    (flagRows ?? []).map(
-      (r) =>
-        [r.system_feature_id as string, (r as { enabled: boolean }).enabled] as const
-    )
-  );
-  const enabledCodes: string[] = [];
-  for (const c of catalog ?? []) {
-    const id = c.id as string;
-    const code = c.code as string;
-    const e = flagMap.get(id);
-    if (e === false) {
-      continue;
-    }
-    enabledCodes.push(code);
+  if (enabledCodes === null) {
+    return NextResponse.json(
+      { enabledCodes: null as string[] | null, error: "features_not_installed" },
+      { status: 200 }
+    );
   }
 
   return NextResponse.json({ enabledCodes });

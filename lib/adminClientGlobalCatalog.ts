@@ -23,6 +23,8 @@ export type AdminCatalogCustomFieldSection = {
   id: string;
   title: string;
   sort_order: number;
+  /** מולטי-טנאנסי: ריק = legacy; חייב להתאים ל־`clients.organization_id` בכרטיס */
+  organization_id?: string | null;
 };
 
 export type AdminCatalogCustomFieldDefinition = {
@@ -36,6 +38,7 @@ export type AdminCatalogCustomFieldDefinition = {
   options?: unknown;
   formula?: string | null;
   sort_order?: number;
+  organization_id?: string | null;
 };
 
 export type AdminClientGlobalCatalog = {
@@ -60,6 +63,36 @@ export function getAdminClientGlobalCatalogSnapshot(): AdminClientGlobalCatalog 
 export function invalidateAdminClientGlobalCatalog(): void {
   cache = null;
   inflight = null;
+}
+
+/** Platform super מקבל מ-PostgREST את כל השורות; בכרטיס לקוח רק org של הלקוח. */
+function rowOrgId(row: { organization_id?: string | null }): string | null {
+  const o = row.organization_id;
+  if (o == null) return null;
+  const t = String(o).trim();
+  return t ? t : null;
+}
+
+export function filterAdminCatalogByOrganizationId(
+  catalog: AdminClientGlobalCatalog,
+  clientOrgId: string | null | undefined
+): AdminClientGlobalCatalog {
+  const want = clientOrgId?.trim() || null;
+  const keep = (r: { organization_id?: string | null }) => {
+    const have = rowOrgId(r);
+    if (!want) {
+      return have == null;
+    }
+    if (have == null) {
+      return true;
+    }
+    return have === want;
+  };
+  return {
+    ...catalog,
+    customFieldSections: catalog.customFieldSections.filter(keep),
+    customFieldDefinitions: catalog.customFieldDefinitions.filter(keep),
+  };
 }
 
 async function fetchCatalogOnce(
@@ -95,12 +128,12 @@ async function fetchCatalogOnce(
       .order("created_at", { ascending: false }),
     supabase
       .from(sectionsTable)
-      .select("id, title, sort_order")
+      .select("*")
       .order("sort_order", { ascending: true }),
     supabase
       .from("custom_field_definitions")
       .select(
-        "id, label, slug, field_type, section_id, row_number, column_span, options, formula, sort_order"
+        "id, label, slug, field_type, section_id, row_number, column_span, options, formula, sort_order, organization_id"
       )
       .order("row_number", { ascending: true })
       .order("sort_order", { ascending: true }),

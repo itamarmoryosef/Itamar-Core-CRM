@@ -13,6 +13,7 @@ import {
 } from "@/lib/customFieldsTemplate";
 import {
   CRM_FIELD_TYPES,
+  crmFieldTypeHebrewLabel,
   parseCrmSelectOptions,
 } from "@/lib/crmFieldLayout";
 import type { CrmFieldType } from "@/lib/crmFieldLayout";
@@ -825,7 +826,7 @@ export default function CustomFieldsSettingsPage() {
                 >
                   {CRM_FIELD_TYPES.map((t) => (
                     <option key={t} value={t}>
-                      {t}
+                      {crmFieldTypeHebrewLabel(t)}
                     </option>
                   ))}
                 </select>
@@ -977,7 +978,7 @@ function FieldTable({
               <td className="p-2 [direction:ltr] text-left font-mono text-xs text-slate-600 dark:text-slate-400">
                 {d.slug}
               </td>
-              <td className="p-2">{d.field_type}</td>
+              <td className="p-2">{crmFieldTypeHebrewLabel(d.field_type)}</td>
               <td className="p-2 text-center tabular-nums text-slate-500">{d.column_span}</td>
               <td className="p-2">
                 <div className="flex gap-1">

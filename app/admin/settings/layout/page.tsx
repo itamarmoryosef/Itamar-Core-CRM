@@ -1170,6 +1170,59 @@ export default function AdminCrmLayoutBuilderPage() {
   );
   const [editingFieldId, setEditingFieldId] = useState<string | null>(null);
 
+  /** `crm_layout_sections` client RLS often blocks INSERT; server uses service role. */
+  const mutateCrmLayoutSection = useCallback(
+    async (
+      action: "create" | "rename" | "delete",
+      payload: { id?: string; title?: string; sort_order?: number }
+    ) => {
+      if (action === "create" && payload.title != null) {
+        const res = await fetch("/api/admin/crm-layout-sections", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: payload.title,
+            sort_order: payload.sort_order ?? 0,
+          }),
+        });
+        const j = (await res.json().catch(() => ({}))) as { error?: string };
+        if (!res.ok) {
+          return { error: j.error ?? "שמירה נכשלה" } as const;
+        }
+        return { error: null } as const;
+      }
+      if (action === "rename" && payload.id && payload.title != null) {
+        const res = await fetch("/api/admin/crm-layout-sections", {
+          method: "PATCH",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: payload.id, title: payload.title }),
+        });
+        const j = (await res.json().catch(() => ({}))) as { error?: string };
+        if (!res.ok) {
+          return { error: j.error ?? "שמירה נכשלה" } as const;
+        }
+        return { error: null } as const;
+      }
+      if (action === "delete" && payload.id) {
+        const res = await fetch(
+          `/api/admin/crm-layout-sections?id=${encodeURIComponent(
+            payload.id
+          )}`,
+          { method: "DELETE", credentials: "include" }
+        );
+        const j = (await res.json().catch(() => ({}))) as { error?: string };
+        if (!res.ok) {
+          return { error: j.error ?? "מחיקה נכשלה" } as const;
+        }
+        return { error: null } as const;
+      }
+      return { error: "בקשה לא חוקית" } as const;
+    },
+    []
+  );
+
   const loadAll = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -1358,9 +1411,19 @@ export default function AdminCrmLayoutBuilderPage() {
         ? 0
         : Math.max(...sortedSections.map((s) => s.sort_order)) + 1;
     const sectionsTable = await getLayoutSectionsTableName(supabase);
-    const { error: e } = await supabase
-      .from(sectionsTable)
-      .insert({ title, sort_order: next });
+    let e: { message: string } | null = null;
+    if (sectionsTable === "crm_layout_sections") {
+      const r = await mutateCrmLayoutSection("create", {
+        title,
+        sort_order: next,
+      });
+      e = r.error ? { message: r.error } : null;
+    } else {
+      const { error: insErr } = await supabase
+        .from(sectionsTable)
+        .insert({ title, sort_order: next });
+      e = insErr;
+    }
     setBusy(false);
     if (e) {
       setToast({
@@ -1379,10 +1442,17 @@ export default function AdminCrmLayoutBuilderPage() {
     if (!t) return;
     setBusy(true);
     const sectionsTable = await getLayoutSectionsTableName(supabase);
-    const { error: e } = await supabase
-      .from(sectionsTable)
-      .update({ title: t })
-      .eq("id", id);
+    let e: { message: string } | null = null;
+    if (sectionsTable === "crm_layout_sections") {
+      const r = await mutateCrmLayoutSection("rename", { id, title: t });
+      e = r.error ? { message: r.error } : null;
+    } else {
+      const { error: upErr } = await supabase
+        .from(sectionsTable)
+        .update({ title: t })
+        .eq("id", id);
+      e = upErr;
+    }
     setBusy(false);
     if (e) {
       setToast({ type: "error", message: e.message });
@@ -1397,10 +1467,17 @@ export default function AdminCrmLayoutBuilderPage() {
       return;
     setBusy(true);
     const sectionsTable = await getLayoutSectionsTableName(supabase);
-    const { error: e } = await supabase
-      .from(sectionsTable)
-      .delete()
-      .eq("id", sectionId);
+    let e: { message: string } | null = null;
+    if (sectionsTable === "crm_layout_sections") {
+      const r = await mutateCrmLayoutSection("delete", { id: sectionId });
+      e = r.error ? { message: r.error } : null;
+    } else {
+      const { error: delErr } = await supabase
+        .from(sectionsTable)
+        .delete()
+        .eq("id", sectionId);
+      e = delErr;
+    }
     setBusy(false);
     if (e) {
       setToast({ type: "error", message: e.message });

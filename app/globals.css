@@ -5,6 +5,15 @@
   --foreground: #171717;
   /** Admin “Air” accent; overridden per session on `.admin-air`. */
   --primary-brand: #6366f1;
+  /** Premium admin surfaces (`.admin-air` overrides canvas) */
+  --admin-text: #0f172a;
+  --admin-canvas-mid: #f0f2f5;
+  --admin-canvas-bottom: #e8ebf0;
+  --admin-border-faint: rgba(148, 163, 184, 0.35);
+  --admin-elevated-shadow: 0 1px 0 rgba(15, 23, 42, 0.04),
+    0 4px 24px rgba(15, 23, 42, 0.06);
+  --admin-elevated-shadow-sm: 0 1px 0 rgba(15, 23, 42, 0.03),
+    0 2px 12px rgba(15, 23, 42, 0.04);
 }
 
 @theme inline {
@@ -36,6 +45,17 @@
   .ring-brand {
     --tw-ring-color: color-mix(in srgb, var(--primary-brand) 22%, transparent);
   }
+
+  /**
+   * Main content shell under AdminShell; stacked cards in pages (SectionCard).
+   */
+  .admin-subpanel-elevate {
+    box-shadow: var(--admin-elevated-shadow-sm);
+  }
+
+  .admin-hero-elevate {
+    box-shadow: var(--admin-elevated-shadow);
+  }
 }
 
 @media (prefers-color-scheme: dark) {
@@ -48,6 +68,21 @@
 body {
   background: var(--background);
   color: var(--foreground);
+}
+
+/**
+ * /admin: gradient canvas + readable text. Does not change login/portal.
+ */
+.admin-air {
+  color: var(--admin-text);
+  background-color: #f3f4f6;
+  background-image: linear-gradient(
+    180deg,
+    #f8f9fc 0%,
+    var(--admin-canvas-mid) 42%,
+    var(--admin-canvas-bottom) 100%
+  );
+  background-attachment: fixed;
 }
 
 /* Mammoth HTML + Hebrew RTL: stable paragraph flow, no bidi “mixing” */

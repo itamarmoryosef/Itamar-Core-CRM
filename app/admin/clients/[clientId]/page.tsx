@@ -52,6 +52,7 @@ import {
 } from "@/components/admin/ClientDocumentManager";
 import {
   ensureAdminClientGlobalCatalog,
+  filterAdminCatalogByOrganizationId,
   getAdminClientGlobalCatalogSnapshot,
   type AdminClientGlobalCatalog,
 } from "@/lib/adminClientGlobalCatalog";
@@ -190,6 +191,8 @@ type ClientDetail = {
   reminders_enabled?: boolean | null;
   /** Dynamic field values keyed by slug (Word {{custom_slug}}). */
   custom_fields_data?: unknown;
+  /** ארגון הלקוח — לסינון custom_field_* ב־Platform super */
+  organization_id?: string | null;
 };
 
 type ClientStatusOption = {
@@ -206,6 +209,7 @@ type CustomFieldSectionRow = {
   id: string;
   title: string;
   sort_order: number;
+  organization_id?: string | null;
 };
 
 type CustomFieldDefinitionRow = {
@@ -219,6 +223,7 @@ type CustomFieldDefinitionRow = {
   options?: unknown;
   formula?: string | null;
   sort_order?: number;
+  organization_id?: string | null;
 };
 
 function buildEditCustomFieldsMap(
@@ -885,7 +890,14 @@ function AdminClientDetailPageInner() {
   useLayoutEffect(() => {
     if (!clientId) return;
     const snap = getAdminClientGlobalCatalogSnapshot();
-    if (snap) applyAdminClientGlobalCatalog(snap);
+    if (snap) {
+      /* הקטלוג הגלובלי (במיוחד super) — ללא custom fields: נטען ב־loadAll לפי organization_id. */
+      applyAdminClientGlobalCatalog({
+        ...snap,
+        customFieldDefinitions: [],
+        customFieldSections: [],
+      });
+    }
   }, [clientId, applyAdminClientGlobalCatalog]);
 
   const loadAll = useCallback(async () => {
@@ -916,8 +928,6 @@ function AdminClientDetailPageInner() {
 
     if (seq !== loadAllSeqRef.current) return;
 
-    applyAdminClientGlobalCatalog(catalog);
-
     const { data: cRow, error: cErr } = clientRes;
 
     if (seq !== loadAllSeqRef.current) return;
@@ -934,8 +944,17 @@ function AdminClientDetailPageInner() {
       return;
     }
     const rawRow = cRow as Record<string, unknown>;
+    const clientOrgId =
+      rawRow.organization_id != null &&
+      String(rawRow.organization_id).trim() !== ""
+        ? String(rawRow.organization_id)
+        : null;
+    catalog = filterAdminCatalogByOrganizationId(catalog, clientOrgId);
+    applyAdminClientGlobalCatalog(catalog);
+
     const merged = {
       ...(cRow as ClientDetail),
+      organization_id: clientOrgId,
       full_name:
         rawRow.full_name != null
           ? String(rawRow.full_name)

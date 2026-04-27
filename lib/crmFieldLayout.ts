@@ -25,6 +25,30 @@ export function crmFieldWidthLabel(w: CrmFieldWidth): string {
   }
 }
 
+/** תצוגה בעברית; הערכים ב-DB נשארים באנגלית (text, number, …) */
+export function crmFieldTypeHebrewLabel(raw: string | null | undefined): string {
+  const l = String(raw ?? "")
+    .trim()
+    .toLowerCase();
+  if (!l) {
+    return "טקסט";
+  }
+  const map: Record<string, string> = {
+    text: "טקסט",
+    textarea: "טקסט (כמה שורות)",
+    number: "מספר",
+    date: "תאריך",
+    select: "רשימה — בחירה",
+    calculation: "חישוב (נוסחה)",
+    checkbox: "תיבת סימון",
+  };
+  if (map[l]) {
+    return map[l]!;
+  }
+  const n = normalizeCrmFieldType(l || undefined);
+  return map[n] ?? l;
+}
+
 /** 12-column grid (legacy width strings) */
 export function crmFieldWidthGridClass(w: string | null | undefined): string {
   switch (w) {

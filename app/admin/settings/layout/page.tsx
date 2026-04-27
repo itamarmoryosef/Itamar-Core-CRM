@@ -32,7 +32,6 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import {
   ChevronDown,
-  Copy,
   Eye,
   GripVertical,
   LayoutGrid,
@@ -47,16 +46,8 @@ import { LayoutSection } from "@/components/admin/LayoutSection";
 import { invalidateAdminClientGlobalCatalog } from "@/lib/adminClientGlobalCatalog";
 import { supabase } from "@/lib/supabase";
 import {
-  customFieldWordPlaceholder,
-  ensureUniqueCustomFieldSlug,
-  normalizeCustomFieldSlugInput,
-  suggestSlugFromLabel,
-} from "@/lib/customFieldsTemplate";
-import {
-  CRM_FIELD_TYPES,
   crmAdminColumnSpanToGrid12,
   normalizeCrmFieldType,
-  parseCrmSelectOptions,
   type CrmFieldType,
 } from "@/lib/crmFieldLayout";
 import {
@@ -368,55 +359,25 @@ const DividerConfigModal = memo(function DividerConfigModalInner(props: {
   );
 });
 
-function fieldTypeHebrew(t: string): string {
-  switch (normalizeCrmFieldType(t)) {
-    case "number":
-      return "מספר";
-    case "date":
-      return "תאריך";
-    case "select":
-      return "רשימה";
-    case "calculation":
-      return "חישוב";
-    default:
-      return "טקסט";
-  }
-}
-
-function emptyNewFieldDraft(): {
-  label: string;
-  slug: string;
-  slugManual: boolean;
-  field_type: CrmFieldType;
-} {
-  return {
-    label: "",
-    slug: "",
-    slugManual: false,
-    field_type: "text",
-  };
-}
-
 function CanvasCustomFieldChipInner(props: {
   field: CustomFieldRow;
   slot: CrmLayoutSlotRow;
   busy: boolean;
-  onEdit: () => void;
   onRemoveFromLayout: () => void;
   onCycleSpan: () => void;
 }) {
-  const { field, slot, busy, onEdit, onRemoveFromLayout, onCycleSpan } =
-    props;
+  const { field, slot, busy, onRemoveFromLayout, onCycleSpan } = props;
   return (
     <BuilderChipShell>
-      <button
-        type="button"
-        onClick={onEdit}
+      <Link
+        href="/admin/settings/fields"
+        onClick={(e) => e.stopPropagation()}
         onPointerDown={(e) => e.stopPropagation()}
-        className="min-w-0 flex-1 truncate text-start text-xs font-medium text-slate-800 dark:text-slate-100"
+        className="min-w-0 flex-1 truncate text-start text-xs font-medium text-slate-800 hover:underline dark:text-slate-100"
+        title="עריכת הגדרות שדה במסך «שדות»"
       >
         {field.label?.trim() ? field.label : "שדה"}
-      </button>
+      </Link>
       <button
         type="button"
         disabled={busy}
@@ -816,316 +777,6 @@ function syncCustomFieldAfterSlotMove(
   );
 }
 
-function FieldCardEditor(props: {
-  field: CustomFieldRow;
-  busy: boolean;
-  slotId: string | null;
-  onRefresh: () => void;
-  onToast: (t: { type: "success" | "error"; message: string }) => void;
-  onClose?: () => void;
-}) {
-  const { field, busy, slotId, onRefresh, onToast, onClose } = props;
-  const [localLabel, setLocalLabel] = useState(field.label);
-  const [localSlug, setLocalSlug] = useState(field.slug);
-  const [localType, setLocalType] = useState<CrmFieldType>(
-    normalizeCrmFieldType(field.field_type)
-  );
-  const [selectOptionLines, setSelectOptionLines] = useState<string[]>(() => {
-    const o = parseCrmSelectOptions(field.options);
-    return o.length > 0 ? [...o] : [""];
-  });
-  const [localFormula, setLocalFormula] = useState(field.formula ?? "");
-
-  useEffect(() => {
-    setLocalLabel(field.label);
-    setLocalSlug(field.slug);
-    setLocalType(normalizeCrmFieldType(field.field_type));
-    const o = parseCrmSelectOptions(field.options);
-    setSelectOptionLines(o.length > 0 ? [...o] : [""]);
-    setLocalFormula(field.formula ?? "");
-  }, [
-    field.id,
-    field.label,
-    field.slug,
-    field.field_type,
-    field.options,
-    field.formula,
-    field.row_number,
-    field.column_span,
-    field.sort_order,
-  ]);
-
-  const ph = customFieldWordPlaceholder(localSlug);
-
-  const copyPlaceholder = async () => {
-    try {
-      await navigator.clipboard.writeText(ph);
-      onToast({ type: "success", message: "הועתק ללוח" });
-    } catch {
-      onToast({ type: "error", message: "העתקה נכשלה" });
-    }
-  };
-
-  const saveMeta = async () => {
-    const slug = normalizeCustomFieldSlugInput(localSlug);
-    if (!slug) {
-      onToast({ type: "error", message: "slug לא תקין" });
-      return;
-    }
-    const ft = localType;
-    const opts =
-      ft === "select"
-        ? selectOptionLines.map((s) => s.trim()).filter(Boolean)
-        : [];
-    const formula =
-      ft === "calculation" ? localFormula.trim() || null : null;
-    const { error } = await supabase
-      .from("custom_field_definitions")
-      .update({
-        label: localLabel.trim(),
-        slug,
-        field_type: ft,
-        options: ft === "select" ? opts : [],
-        formula,
-      })
-      .eq("id", field.id);
-    if (error) {
-      onToast({
-        type: "error",
-        message: error.code === "23505" ? "slug כבר קיים" : error.message,
-      });
-      return;
-    }
-    onToast({ type: "success", message: "נשמר" });
-    onRefresh();
-  };
-
-  const setSpan = async (span: number) => {
-    const s = Math.min(4, Math.max(1, span));
-    const { error } = await supabase
-      .from("custom_field_definitions")
-      .update({ column_span: s })
-      .eq("id", field.id);
-    if (error) {
-      onToast({ type: "error", message: error.message });
-      return;
-    }
-    if (slotId) {
-      await supabase
-        .from("crm_layout_slots")
-        .update({ column_span: s })
-        .eq("id", slotId);
-    }
-    onRefresh();
-  };
-
-  const cycleSpan = async () => {
-    const next = field.column_span >= 4 ? 1 : field.column_span + 1;
-    await setSpan(next);
-  };
-
-  const removeField = async () => {
-    if (!window.confirm("למחוק שדה זה?")) return;
-    if (slotId) {
-      await supabase.from("crm_layout_slots").delete().eq("id", slotId);
-    } else {
-      await supabase
-        .from("crm_layout_slots")
-        .delete()
-        .eq("definition_id", field.id);
-    }
-    const { error } = await supabase
-      .from("custom_field_definitions")
-      .delete()
-      .eq("id", field.id);
-    if (error) {
-      onToast({ type: "error", message: error.message });
-      return;
-    }
-    onToast({ type: "success", message: "נמחק" });
-    onClose?.();
-    onRefresh();
-  };
-
-  return (
-    <div className="flex max-h-[min(85vh,36rem)] flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl dark:border-neutral-700 dark:bg-neutral-900">
-      <div className="flex w-full shrink-0 items-center gap-2 border-b border-slate-100 px-2 py-1.5 dark:border-neutral-800">
-        <div className="min-w-0 flex-1 text-start">
-          <span className="block truncate text-xs font-semibold text-neutral-800 dark:text-neutral-100">
-            {field.label}
-          </span>
-          <code
-            className="mt-0.5 block max-w-full truncate text-[9px] font-normal text-slate-500 dark:text-slate-400"
-            dir="ltr"
-            title={ph}
-          >
-            {ph}
-          </code>
-        </div>
-        <button
-          type="button"
-          onClick={() => void copyPlaceholder()}
-          className="shrink-0 rounded p-0.5 text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800"
-          title={`העתק ${ph}`}
-        >
-          <Copy className="h-3 w-3" aria-hidden />
-        </button>
-        <span className="shrink-0 rounded bg-slate-100 px-1 py-0.5 font-mono text-[9px] text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-          {field.column_span}/4
-        </span>
-        {onClose ? (
-          <button
-            type="button"
-            onClick={onClose}
-            className="shrink-0 rounded p-1 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"
-            aria-label="סגור"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        ) : null}
-      </div>
-
-      <div className="grid flex-1 grid-cols-1 gap-1.5 overflow-y-auto p-2">
-        <input
-          value={localLabel}
-          onChange={(e) => setLocalLabel(e.target.value)}
-          placeholder="תווית"
-          className="h-8 rounded-md border border-slate-200 bg-white px-2 text-xs text-neutral-900 placeholder:text-neutral-400 focus:border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-200 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
-        />
-        <input
-          value={localSlug}
-          onChange={(e) => setLocalSlug(e.target.value)}
-          dir="ltr"
-          placeholder="slug"
-          className="h-8 rounded-md border border-slate-200 bg-white px-2 font-mono text-xs text-neutral-900 placeholder:text-neutral-400 focus:border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-200 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
-        />
-        <select
-          value={localType}
-          onChange={(e) =>
-            setLocalType(normalizeCrmFieldType(e.target.value))
-          }
-          className="h-8 rounded-md border border-slate-200 bg-white px-2 text-xs text-neutral-900 focus:outline-none focus:ring-1 focus:ring-slate-200 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
-        >
-          {CRM_FIELD_TYPES.map((t) => (
-            <option key={t} value={t}>
-              {fieldTypeHebrew(t)}
-            </option>
-          ))}
-        </select>
-        {localType === "select" ? (
-          <div className="space-y-1.5 rounded-md border border-gray-200 bg-slate-50 p-2 dark:border-neutral-700">
-            <p className="text-start text-[10px] font-medium text-neutral-500 dark:text-neutral-400">
-              אפשרויות
-            </p>
-            <ul className="max-h-28 space-y-1 overflow-y-auto">
-              {selectOptionLines.map((line, i) => (
-                <li key={i} className="flex gap-1">
-                  <input
-                    value={line}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      setSelectOptionLines((prev) => {
-                        const next = [...prev];
-                        next[i] = v;
-                        return next;
-                      });
-                    }}
-                    placeholder={`אפשרות ${i + 1}`}
-                    className="min-w-0 flex-1 rounded-md border border-gray-200 bg-white px-2 py-1 text-xs text-neutral-900 placeholder:text-neutral-400 focus:border-neutral-300 focus:outline-none focus:ring-1 focus:ring-neutral-200 dark:border-neutral-600 dark:bg-neutral-950 dark:text-neutral-100"
-                  />
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setSelectOptionLines((prev) =>
-                        prev.filter((_, j) => j !== i)
-                      )
-                    }
-                    className="shrink-0 rounded-lg border border-gray-200 bg-white px-1.5 py-1 text-xs text-neutral-500 hover:bg-neutral-50 dark:border-neutral-600 dark:bg-neutral-900 dark:text-neutral-400"
-                    aria-label="הסר אפשרות"
-                  >
-                    ×
-                  </button>
-                </li>
-              ))}
-            </ul>
-            <button
-              type="button"
-              onClick={() =>
-                setSelectOptionLines((prev) => [...prev, ""])
-              }
-              className="w-full rounded-xl border border-dashed border-gray-300 bg-white/80 py-1 text-xs font-medium text-neutral-600 hover:bg-white dark:border-neutral-600 dark:bg-neutral-900 dark:text-neutral-300"
-            >
-              + אפשרות
-            </button>
-          </div>
-        ) : null}
-        {localType === "calculation" ? (
-          <div className="space-y-1 rounded-md border border-gray-200 bg-slate-50 p-2 dark:border-neutral-700">
-            <label className="block text-start text-[10px] font-medium text-neutral-600 dark:text-neutral-400">
-              נוסחה
-            </label>
-            <input
-              value={localFormula}
-              onChange={(e) => setLocalFormula(e.target.value)}
-              dir="ltr"
-              placeholder="{{שדה_א}} + {{שדה_ב}}"
-              className="h-8 w-full rounded-md border border-gray-200 bg-white px-2 font-mono text-xs text-neutral-900 placeholder:text-neutral-400 focus:border-neutral-300 focus:outline-none focus:ring-1 focus:ring-neutral-200 dark:border-neutral-600 dark:bg-neutral-950 dark:text-neutral-100"
-            />
-          </div>
-        ) : null}
-      </div>
-
-      <div className="flex shrink-0 flex-wrap items-center gap-0.5 border-t border-gray-100 px-2 py-1.5 dark:border-neutral-800">
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() => void cycleSpan()}
-          className="rounded border border-gray-200 bg-neutral-50 px-1.5 py-0.5 text-[10px] font-medium text-neutral-700 hover:bg-neutral-100 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-200"
-          title="החלף רוחב בעמודות"
-        >
-          רוחב ↻
-        </button>
-        <div className="ms-auto flex gap-0.5">
-          {[1, 2, 3, 4].map((n) => (
-            <button
-              key={n}
-              type="button"
-              disabled={busy}
-              onClick={() => void setSpan(n)}
-              className={`h-6 w-6 rounded text-[10px] font-bold ${
-                field.column_span === n
-                  ? "bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900"
-                  : "border border-gray-200 bg-white text-neutral-600 hover:bg-neutral-50 dark:border-neutral-600 dark:bg-neutral-900"
-              }`}
-            >
-              {n}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="flex shrink-0 gap-1.5 border-t border-gray-100 px-2 py-1.5 dark:border-neutral-800">
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() => void saveMeta()}
-          className="flex-1 rounded-md bg-neutral-900 py-1.5 text-xs font-medium text-white hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-white"
-        >
-          שמור
-        </button>
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() => void removeField()}
-          className="rounded-md border border-red-200 px-2 py-1.5 text-red-600 hover:bg-red-50 dark:border-red-900/40 dark:text-red-400"
-        >
-          <Trash2 className="h-3.5 w-3.5" aria-hidden />
-        </button>
-      </div>
-    </div>
-  );
-}
-
 export default function AdminCrmLayoutBuilderPage() {
   const [sections, setSections] = useState<SectionRow[]>([]);
   const [fields, setFields] = useState<CustomFieldRow[]>([]);
@@ -1146,17 +797,6 @@ export default function AdminCrmLayoutBuilderPage() {
   const [pendingRowBySection, setPendingRowBySection] = useState<
     Record<string, number>
   >({});
-  const [newFieldDraft, setNewFieldDraft] = useState<
-    Record<
-      string,
-      {
-        label: string;
-        slug: string;
-        slugManual: boolean;
-        field_type: CrmFieldType;
-      }
-    >
-  >({});
   const [assignFieldId, setAssignFieldId] = useState<string | null>(null);
   const [assignSectionId, setAssignSectionId] = useState<string>("");
   /** Row index as string, or `"__new__"` for a new row below existing. */
@@ -1168,7 +808,6 @@ export default function AdminCrmLayoutBuilderPage() {
   const [dividerModalSlotId, setDividerModalSlotId] = useState<string | null>(
     null
   );
-  const [editingFieldId, setEditingFieldId] = useState<string | null>(null);
 
   /** `crm_layout_sections` client RLS often blocks INSERT; server uses service role. */
   const mutateCrmLayoutSection = useCallback(
@@ -1353,15 +992,6 @@ export default function AdminCrmLayoutBuilderPage() {
     [fields, slottedDefIds]
   );
 
-  const existingSlugSet = useMemo(() => {
-    const s = new Set<string>();
-    for (const f of fields) {
-      const sl = normalizeCustomFieldSlugInput(f.slug);
-      if (sl) s.add(sl);
-    }
-    return s;
-  }, [fields]);
-
   const maxRowInSection = useCallback(
     (sectionId: string) => {
       const rows = draftSlots
@@ -1534,124 +1164,6 @@ export default function AdminCrmLayoutBuilderPage() {
       },
     ]);
     setDividerModalSlotId(null);
-  };
-
-  const addFieldToSection = async (sectionId: string) => {
-    const draft = newFieldDraft[sectionId] ?? emptyNewFieldDraft();
-    const label = draft.label.trim();
-    if (!label) {
-      setToast({ type: "error", message: "יש להזין תווית לשדה" });
-      return;
-    }
-    const existing = new Set(existingSlugSet);
-    let slug = normalizeCustomFieldSlugInput(draft.slug.trim());
-    if (!slug) {
-      const basis = suggestSlugFromLabel(label);
-      slug = basis ? ensureUniqueCustomFieldSlug(basis, existing) : "";
-    }
-    if (!slug) {
-      setToast({ type: "error", message: "לא ניתן ליצור מזהה שדה — נסו תווית אחרת" });
-      return;
-    }
-    if (existing.has(slug)) {
-      if (draft.slugManual) {
-        setToast({
-          type: "error",
-          message: "ה־slug כבר קיים במערכת — שנה את המזהה או את התווית",
-        });
-        return;
-      }
-      slug = ensureUniqueCustomFieldSlug(slug, existing);
-    }
-    const fieldType = normalizeCrmFieldType(draft.field_type ?? "text");
-    const display = getRowNumbersToDisplay(sectionId);
-    const rowNum =
-      pendingRowBySection[sectionId] ??
-      display[display.length - 1] ??
-      1;
-    const inRowSlots = draftSlots.filter(
-      (s) => s.section_id === sectionId && s.row_number === rowNum
-    );
-    const sort_order =
-      inRowSlots.length === 0
-        ? 0
-        : Math.max(...inRowSlots.map((s) => s.sort_order)) + 1;
-
-    setBusy(true);
-    const { data: created, error: e } = await supabase
-      .from("custom_field_definitions")
-      .insert({
-        label,
-        slug,
-        field_type: fieldType,
-        section_id: sectionId,
-        row_number: rowNum,
-        column_span: 4,
-        sort_order,
-        options: [],
-        formula: null,
-      })
-      .select("id")
-      .single();
-    if (!e && created?.id && !slotsTableMissing) {
-      const { data: slotRow, error: se } = await supabase
-        .from("crm_layout_slots")
-        .insert(
-          buildCrmLayoutSlotInsertRow({
-            id: "new",
-            section_id: sectionId,
-            row_number: rowNum,
-            column_span: 4,
-            sort_order,
-            slot_kind: "custom",
-            core_key: null,
-            definition_id: created.id,
-          })
-        )
-        .select(
-          "id, section_id, row_number, column_span, sort_order, slot_kind, core_key, definition_id"
-        )
-        .single();
-      if (se) {
-        setBusy(false);
-        setToast({ type: "error", message: se.message });
-        return;
-      }
-      if (slotRow) {
-        const row = slotRow as CrmLayoutSlotRow;
-        setDraftSlots((d) => (d.some((x) => x.id === row.id) ? d : [...d, row]));
-        setCommittedSlots((c) =>
-          c.some((x) => x.id === row.id) ? c : [...c, row]
-        );
-      }
-      const newField: CustomFieldRow = {
-        id: created.id,
-        label,
-        slug,
-        field_type: fieldType,
-        section_id: sectionId,
-        row_number: rowNum,
-        column_span: 4,
-        sort_order,
-        options: [],
-        formula: null,
-      };
-      setFields((prev) => [...prev, newField]);
-    }
-    setBusy(false);
-    if (e) {
-      setToast({
-        type: "error",
-        message: e.code === "23505" ? "slug קיים" : e.message,
-      });
-      return;
-    }
-    setNewFieldDraft((p) => ({
-      ...p,
-      [sectionId]: emptyNewFieldDraft(),
-    }));
-    setToast({ type: "success", message: "השדה נוסף" });
-    if (slotsTableMissing) void loadAll();
   };
 
   const confirmAssign = async () => {
@@ -2240,6 +1752,16 @@ export default function AdminCrmLayoutBuilderPage() {
             <h1 className="mt-1 text-start text-sm font-bold text-slate-900 dark:text-slate-50">
               פריסת כרטיס
             </h1>
+            <p className="mt-1 text-start text-[11px] text-slate-500">
+              הוספה או שינוי סוג/תווית/מזהה:{" "}
+              <Link
+                href="/admin/settings/fields"
+                className="font-medium text-brand hover:underline"
+              >
+                שדות
+              </Link>
+              . כאן: גרירה, שורות, רוחב.
+            </p>
           </div>
           <div className="flex flex-wrap items-center gap-2 sm:gap-3">
             {layoutDirty && !slotsTableMissing ? (
@@ -2326,7 +1848,6 @@ export default function AdminCrmLayoutBuilderPage() {
               <div className="flex flex-col gap-8 pt-4">
               {sortedSections.map((sec) => {
                 const displayRows = getRowNumbersToDisplay(sec.id);
-                const draft = newFieldDraft[sec.id] ?? emptyNewFieldDraft();
                 const activeRow =
                   pendingRowBySection[sec.id] ??
                   displayRows[displayRows.length - 1] ??
@@ -2544,9 +2065,6 @@ export default function AdminCrmLayoutBuilderPage() {
                                               field={f}
                                               slot={sl}
                                               busy={busy}
-                                              onEdit={() =>
-                                                setEditingFieldId(f.id)
-                                              }
                                               onRemoveFromLayout={() =>
                                                 void removeLayoutSlot(sl, {
                                                   skipConfirm: true,
@@ -2572,9 +2090,6 @@ export default function AdminCrmLayoutBuilderPage() {
                                             field={f}
                                             slot={sl}
                                             busy={busy}
-                                            onEdit={() =>
-                                              setEditingFieldId(f.id)
-                                            }
                                             onRemoveFromLayout={() =>
                                               void removeLayoutSlot(sl, {
                                                 skipConfirm: true,
@@ -2594,74 +2109,6 @@ export default function AdminCrmLayoutBuilderPage() {
                         })}
                       </div>
                     </SortableContext>
-
-                    <div className="flex flex-wrap items-end gap-2 border-t border-slate-200/50 pt-2 dark:border-slate-800">
-                      <input
-                        value={draft.label}
-                        onChange={(e) => {
-                          const label = e.target.value;
-                          setNewFieldDraft((p) => {
-                            const prev = p[sec.id] ?? emptyNewFieldDraft();
-                            const next = { ...prev, label };
-                            if (!prev.slugManual) {
-                              const basis = suggestSlugFromLabel(label);
-                              next.slug = basis
-                                ? ensureUniqueCustomFieldSlug(
-                                    basis,
-                                    existingSlugSet
-                                  )
-                                : "";
-                            }
-                            return { ...p, [sec.id]: next };
-                          });
-                        }}
-                        className="h-9 min-w-[8rem] flex-1 rounded-md border border-slate-200 bg-white px-2 text-xs dark:border-slate-700 dark:bg-slate-900"
-                      />
-                      <select
-                        value={draft.field_type}
-                        onChange={(e) =>
-                          setNewFieldDraft((p) => ({
-                            ...p,
-                            [sec.id]: {
-                              ...(p[sec.id] ?? emptyNewFieldDraft()),
-                              field_type: normalizeCrmFieldType(
-                                e.target.value
-                              ),
-                            },
-                          }))
-                        }
-                        className="h-9 rounded-md border border-slate-200 bg-white px-2 text-xs dark:border-slate-700 dark:bg-slate-900"
-                      >
-                        {CRM_FIELD_TYPES.map((t) => (
-                          <option key={t} value={t}>
-                            {fieldTypeHebrew(t)}
-                          </option>
-                        ))}
-                      </select>
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() => void addFieldToSection(sec.id)}
-                        className={`${minimalistPrimaryClass} h-9 shrink-0 px-3 disabled:opacity-50`}
-                      >
-                        <Plus className="h-3.5 w-3.5" />
-                      </button>
-                      <input
-                        dir="ltr"
-                        value={draft.slug}
-                        onChange={(e) =>
-                          setNewFieldDraft((p) => ({
-                            ...p,
-                            [sec.id]: {
-                              ...(p[sec.id] ?? emptyNewFieldDraft()),
-                              slug: e.target.value,
-                              slugManual: true,
-                            },
-                          }))
-                        }
-                        className="h-9 w-full min-w-[6rem] rounded-md border border-slate-200 bg-slate-100/80 px-2 font-mono text-[10px] text-slate-700 dark:border-slate-700 dark:bg-slate-900 sm:w-36"
-                      />
-                    </div>
                   </LayoutSection>
                 );
               })}
@@ -2799,49 +2246,6 @@ export default function AdminCrmLayoutBuilderPage() {
             patchDividerInDraft(dividerModalSlotId, cfg);
           }}
         />
-      ) : null}
-      {editingFieldId ? (
-        <div
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4"
-          dir="rtl"
-        >
-          <button
-            type="button"
-            className="absolute inset-0 cursor-default"
-            aria-label="סגור"
-            onClick={() => setEditingFieldId(null)}
-          />
-          <div
-            className="relative z-10 w-full max-w-md"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {(() => {
-              const ef = fieldById.get(editingFieldId);
-              if (!ef) return null;
-              const sl = draftSlots.find(
-                (s) =>
-                  s.definition_id === editingFieldId &&
-                  s.slot_kind === "custom"
-              );
-              const dbSlotId =
-                sl &&
-                !sl.id.startsWith("legacy-") &&
-                !sl.id.startsWith("local-")
-                  ? sl.id
-                  : null;
-              return (
-                <FieldCardEditor
-                  field={ef}
-                  busy={busy}
-                  slotId={dbSlotId}
-                  onRefresh={() => void loadAll()}
-                  onToast={setToast}
-                  onClose={() => setEditingFieldId(null)}
-                />
-              );
-            })()}
-          </div>
-        </div>
       ) : null}
       <DragOverlay dropAnimation={null} style={{ cursor: "grabbing" }}>
         <LayoutDragOverlayContent

@@ -12,7 +12,6 @@ import {
   LayoutGrid,
   Loader2,
   Image,
-  MessageCircle,
   Pencil,
   Rows3,
   Save,
@@ -20,12 +19,9 @@ import {
   Sparkles,
   Tags,
   Trash2,
-  Truck,
-  UserPlus,
   Users,
   X,
 } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
 import {
   ResponsiveDataTable,
   type ResponsiveColumnDef,
@@ -215,7 +211,7 @@ export default function AdminSettingsPage() {
       ["reminders", "תזכורות"],
       ["leads", "ספקי לידים"],
       ["docTypes", "סוגי מסמכים"],
-      ["templates", "תבניות וקודים"],
+      ["templates", "תבניות Word + קודים"],
       ["team", "ניהול צוות"],
     ];
     return all.filter(
@@ -235,71 +231,23 @@ export default function AdminSettingsPage() {
   const [me, setMe] = useState<AdminMeResponse | null>(null);
   const [meLoadDone, setMeLoadDone] = useState(false);
 
-  /** לינקים יחידים — אין כפל עם הכותרת; ניווט הועבר מ־AdminShell לכאן */
-  const settingsHubItems = useMemo((): {
+  /**
+   * רק דפי עורך (מבנה/CRM) — ללא כפל עם הלשוניות למטה
+   * (לידים, צוות, Word וכו' נמצאים רק בלשוניות)
+   */
+  const settingsSubpageLinks = useMemo((): {
     href: string;
     label: string;
-    hint: string;
-    icon: LucideIcon;
   }[] => {
-    const items: {
-      href: string;
-      label: string;
-      hint: string;
-      icon: LucideIcon;
-    }[] = [
-      {
-        href: "/admin/settings/statuses",
-        label: "ניהול סטטוסים",
-        hint: "מזהי UUID, צבע, בוט, is_active",
-        icon: Tags,
-      },
-      {
-        href: "/admin/settings/fields",
-        label: "שדות מותאמים",
-        hint: "קבוצות, סוגי שדות, ייבוא Word",
-        icon: Rows3,
-      },
-      {
-        href: "/admin/settings/layout",
-        label: "פריסת כרטיס לקוח",
-        hint: "רשת, שורות, מחיצות, שדות ליבה",
-        icon: LayoutGrid,
-      },
-      {
-        href: "/admin/settings/templates",
-        label: "מבנה טפסי הסכם (פורטל)",
-        hint: "רשת שדות בטפסי פורטל",
-        icon: FileType,
-      },
+    const u: { href: string; label: string }[] = [
+      { href: "/admin/settings/statuses", label: "ניהול סטטוסים" },
+      { href: "/admin/settings/fields", label: "שדות מותאמים" },
+      { href: "/admin/settings/layout", label: "פריסת כרטיס" },
+      { href: "/admin/settings/templates", label: "עורך טפסי פורטל" },
+      { href: "/admin/settings/whatsapp", label: "חיבור WhatsApp" },
     ];
-    if (checkFeature(enabledFeatureCodes, ORG_FEATURE.leadProviders)) {
-      items.push({
-        href: "/admin/settings#leads",
-        label: "ספקי לידים",
-        hint: "אחוזי עמלה, אנשי קשר",
-        icon: Truck,
-      });
-    }
-    items.push({
-      href: "/admin/settings/whatsapp",
-      label: "חיבור WhatsApp",
-      hint: "שירות נפרד, QR, pairing",
-      icon: MessageCircle,
-    });
-    if (
-      me?.teamAdmin === true &&
-      checkFeature(enabledFeatureCodes, ORG_FEATURE.team)
-    ) {
-      items.push({
-        href: "/admin/team",
-        label: "הזמנת חברי צוות",
-        hint: "יצירת משתמש + סיסמה ראשונית",
-        icon: UserPlus,
-      });
-    }
-    return items;
-  }, [enabledFeatureCodes, me?.teamAdmin]);
+    return u;
+  }, []);
   const [allOrgs, setAllOrgs] = useState<
     { id: string; name: string; slug: string }[] | null
   >(null);
@@ -1276,50 +1224,34 @@ export default function AdminSettingsPage() {
             הגדרות מערכת
           </h1>
           <p className="mt-1.5 text-start text-sm text-slate-600">
-            דפים מובנים (למעלה) ואז — הגדרות כלליות באותו דף (לשוניות). אין
-            כפל עם תפריט העל.
+            שורת קישורים: דפי עריכה נפרדים. למטה: כל שאר ההגדרות (לשוניות) — בלי
+            אותו פריט בשני מקומות.
           </p>
         </header>
 
-        <section
-          className="rounded-2xl border border-slate-200/70 bg-slate-50/40 p-4 sm:p-5"
-          aria-label="הגדרות — דפים ייעודיים"
+        <nav
+          className="flex flex-wrap items-center gap-x-1 gap-y-1 rounded-lg border border-slate-200/60 bg-slate-50/50 px-2 py-2 text-sm"
+          aria-label="דפי עריכה"
         >
-          <h2 className="text-start text-sm font-semibold text-slate-800">
-            דפי הגדרה (מבנה CRM, מסמכים, חיבורים)
-          </h2>
-          <p className="mt-0.5 text-start text-xs text-slate-600">
-            בחרו אזור — מעבר ישיר, ללא כפילויות.
-          </p>
-          <ul className="mt-3 grid list-none gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
-            {settingsHubItems.map((item) => {
-              const Icon = item.icon;
-              return (
-                <li key={item.href + item.label}>
-                  <Link
-                    href={item.href}
-                    className="group flex h-full min-h-[4.25rem] flex-col justify-between gap-1 rounded-xl border border-slate-200/80 bg-white p-3.5 text-start shadow-sm transition hover:border-slate-300/90 hover:shadow admin-subpanel-elevate"
-                  >
-                    <span className="flex items-start justify-between gap-2">
-                      <span className="min-w-0 text-sm font-semibold text-slate-900 group-hover:text-brand">
-                        {item.label}
-                      </span>
-                      <span className="shrink-0 rounded-lg border border-slate-100 bg-slate-50 p-1.5 text-slate-600 group-hover:text-brand">
-                        <Icon
-                          className="h-4 w-4"
-                          aria-hidden
-                        />
-                      </span>
-                    </span>
-                    <span className="line-clamp-2 text-start text-xs text-slate-500">
-                      {item.hint}
-                    </span>
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
-        </section>
+          {settingsSubpageLinks.map((item, i) => (
+            <span key={item.href} className="inline-flex items-center">
+              {i > 0 ? (
+                <span
+                  className="mx-1.5 text-slate-300"
+                  aria-hidden
+                >
+                  |
+                </span>
+              ) : null}
+              <Link
+                href={item.href}
+                className="font-medium text-brand hover:underline"
+              >
+                {item.label}
+              </Link>
+            </span>
+          ))}
+        </nav>
 
         <section aria-labelledby="settings-rubrics-heading" className="space-y-2">
           <div>
@@ -1327,11 +1259,11 @@ export default function AdminSettingsPage() {
               id="settings-rubrics-heading"
               className="text-start text-sm font-semibold text-slate-800"
             >
-              הגדרות כלליות (לשוניות)
+              הגדרות (באותו דף)
             </h2>
             <p className="text-start text-xs text-slate-500">
-              מיתוג, התראות, תזכורות, סוגי מסמכים, תבניות Word, לידים (אם
-              הופעל) וניהול צוות (עריכה מלאה).
+              מיתוג, התראות, תזכורות, ספקי לידים, סוגי מסמכים, Word,
+              וניהול/עריכת צוות. יצירת משתמש חדש: קישור בתוך «ניהול צוות».
             </p>
           </div>
         <div className="rounded-2xl border border-slate-200/80 bg-white p-3 shadow-sm">

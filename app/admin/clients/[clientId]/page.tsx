@@ -132,6 +132,8 @@ import {
   type CrmLayoutSlotRow,
 } from "@/lib/crmClientCardLayout";
 import { isPostgrestMissingRelation } from "@/lib/postgrestSchema";
+import { useAdminSession } from "@/lib/adminSessionContext";
+import { mergeClientOutboundMessage } from "@/lib/mergeClientOutboundMessage";
 
 /** Grow fast billing page (office link). Query params: fullName, phone, description. */
 const GROW_FAST_BILLING_BASE =
@@ -500,6 +502,7 @@ function isClientDetailMainTab(value: string): value is ClientDetailMainTab {
 function AdminClientDetailPageInner() {
   const params = useParams<{ clientId: string }>();
   const router = useRouter();
+  const adminSession = useAdminSession();
   const clientId =
     typeof params?.clientId === "string" ? params.clientId : "";
 
@@ -573,6 +576,12 @@ function AdminClientDetailPageInner() {
   const [growBillingModalOpen, setGrowBillingModalOpen] = useState(false);
   const [freeMessageModalOpen, setFreeMessageModalOpen] = useState(false);
   const [freeMessageText, setFreeMessageText] = useState("");
+  const [freeMessageTemplateId, setFreeMessageTemplateId] = useState("");
+  const [outboundMessageTemplates, setOutboundMessageTemplates] = useState<
+    { id: string; name: string; body: string; is_active: boolean }[]
+  >([]);
+  const [outboundMessageTemplatesLoad, setOutboundMessageTemplatesLoad] =
+    useState(false);
   const [isSending, setIsSending] = useState(false);
   const [growBillingAmount, setGrowBillingAmount] = useState("");
   const [growBillingDescription, setGrowBillingDescription] = useState("");
@@ -2364,9 +2373,63 @@ function AdminClientDetailPageInner() {
     }
   };
 
+  const loadOutboundMessageTemplates = useCallback(async () => {
+    const orgId = adminSession?.activeOrganization?.id?.trim() ?? null;
+    if (!orgId) {
+      setOutboundMessageTemplates([]);
+      return;
+    }
+    setOutboundMessageTemplatesLoad(true);
+    try {
+      const res = await fetch(
+        `/api/admin/outbound-message-templates?organizationId=${encodeURIComponent(orgId)}`,
+        { credentials: "include", cache: "no-store" }
+      );
+      const j = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        templates?: {
+          id: string;
+          name: string;
+          body: string;
+          is_active: boolean;
+        }[];
+      };
+      if (res.ok && j.templates) {
+        setOutboundMessageTemplates(
+          j.templates.filter((t) => t.is_active !== false)
+        );
+      } else {
+        setOutboundMessageTemplates([]);
+      }
+    } catch {
+      setOutboundMessageTemplates([]);
+    } finally {
+      setOutboundMessageTemplatesLoad(false);
+    }
+  }, [adminSession?.activeOrganization?.id]);
+
   const openFreeMessageModal = () => {
     setFreeMessageText("");
+    setFreeMessageTemplateId("");
     setFreeMessageModalOpen(true);
+    void loadOutboundMessageTemplates();
+  };
+
+  const applyFreeMessageOutboundTemplate = () => {
+    if (!client) return;
+    const t = outboundMessageTemplates.find(
+      (x) => x.id === freeMessageTemplateId
+    );
+    if (!t) return;
+    setFreeMessageText(
+      mergeClientOutboundMessage(t.body, {
+        fullName: client.full_name,
+        phone: client.phone,
+        shortId: client.short_id,
+        brandName:
+          adminSession?.activeOrganization?.brand_name?.trim() || null,
+      })
+    );
   };
 
   const appendFreeMessageTemplate = (line: string) => {
@@ -3572,7 +3635,7 @@ function AdminClientDetailPageInner() {
                   aria-labelledby="free-msg-title"
                   noValidate
                   onSubmit={handleFreeMessageFormSubmit}
-                  className="box-border max-h-[92dvh] w-full max-w-none overflow-y-auto border-x-0 border-b-0 border-t border-slate-200 bg-white p-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] shadow-2xl max-md:rounded-t-2xl max-md:px-4 sm:max-h-[90vh] sm:max-w-lg sm:rounded-2xl sm:border sm:p-5 dark:border-slate-700 dark:bg-neutral-900"
+                  className="box-border max-h-[92dvh] w-full max-w-none overflow-y-auto border-x-0 border-b-0 border-t border-slate-200 bg-white p-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] shadow-2xl max-md:rounded-t-2xl max-md:px-4 sm:max-h-[90vh] sm:max-w-2xl sm:rounded-2xl sm:border sm:p-5 dark:border-slate-700 dark:bg-neutral-900"
                   dir="rtl"
                   onClick={(ev) => ev.stopPropagation()}
                 >
@@ -3638,6 +3701,52 @@ function AdminClientDetailPageInner() {
                       )}
                     </div>
                   </div>
+                  {adminSession?.activeOrganization?.id ? (
+                    <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/80 p-3 text-start dark:border-slate-600 dark:bg-slate-800/40">
+                      <p className="text-xs font-medium text-slate-700 dark:text-slate-200">
+                        תבנית שמורה (הגדרות → WhatsApp)
+                      </p>
+                      <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
+                        ממלא [שם_פרטי], [לינק_פורטל] וכו׳ ללקוח הנוכחי
+                      </p>
+                      <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
+                        <select
+                          value={freeMessageTemplateId}
+                          onChange={(e) =>
+                            setFreeMessageTemplateId(e.target.value)
+                          }
+                          disabled={isSending || outboundMessageTemplatesLoad}
+                          className="h-9 min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-2 text-sm dark:border-slate-600 dark:bg-slate-950"
+                        >
+                          <option value="">
+                            {outboundMessageTemplatesLoad
+                              ? "טוען…"
+                              : "— בחרו תבנית —"}
+                          </option>
+                          {outboundMessageTemplates.map((t) => (
+                            <option key={t.id} value={t.id}>
+                              {t.name}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          disabled={
+                            isSending ||
+                            !freeMessageTemplateId ||
+                            outboundMessageTemplatesLoad
+                          }
+                          onClick={(ev) => {
+                            ev.preventDefault();
+                            applyFreeMessageOutboundTemplate();
+                          }}
+                          className="h-9 shrink-0 rounded-lg border border-indigo-200 bg-indigo-50 px-3 text-sm font-semibold text-indigo-800 hover:bg-indigo-100 disabled:opacity-50 dark:border-indigo-800 dark:bg-indigo-950/50 dark:text-indigo-200"
+                        >
+                          מזג לשדה
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
                   <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-end sm:gap-2">
                     <button
                       type="button"

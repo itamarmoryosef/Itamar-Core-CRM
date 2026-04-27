@@ -1,8 +1,18 @@
 "use client";
 
 import * as React from "react";
-import { MessageCircle, QrCode, Loader2, RefreshCw, Smartphone, Plus, CheckCircle2, Trash2 } from "lucide-react";
-import { MessageTemplatesManager } from "@/components/whatsapp/MessageTemplatesManager";
+import Link from "next/link";
+import {
+  MessageCircle,
+  QrCode,
+  Loader2,
+  RefreshCw,
+  Smartphone,
+  Plus,
+  CheckCircle2,
+  Trash2,
+  BookTemplate,
+} from "lucide-react";
 import { WhatsAppBridgeStatusBar } from "@/components/whatsapp/WhatsAppBridgeStatusBar";
 import { useAdminSession } from "@/lib/adminSessionContext";
 
@@ -673,10 +683,26 @@ export function WhatsAppIntegration() {
             )}
           </div>
 
-          <div className="space-y-4 rounded-lg border border-gray-200/80 bg-gray-50/30 p-5 dark:border-zinc-800 dark:bg-zinc-900/20">
-            <p className="text-base font-medium text-gray-900 dark:text-zinc-100">{t("whatsapp.message_templates")}</p>
-            <p className="text-sm text-gray-500 dark:text-zinc-400">{t("whatsapp.message_templates_placeholder")}</p>
-            <MessageTemplatesManager />
+          <div className="rounded-2xl border border-emerald-200/60 bg-gradient-to-br from-white to-emerald-50/30 p-5 dark:border-emerald-900/40 dark:from-zinc-900/50 dark:to-emerald-950/20">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0 text-start">
+                <p className="flex items-center gap-2 text-base font-bold text-slate-900 dark:text-slate-100">
+                  <BookTemplate className="h-5 w-5 shrink-0 text-emerald-600" aria-hidden />
+                  {t("whatsapp.message_templates")}
+                </p>
+                <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+                  {t("whatsapp.message_templates_placeholder")} — ניהול בדף
+                  מרכזי: תבניות מוכנות, שיוך לשלב CRM, ומזוג מכרטיס הלקוח.
+                </p>
+              </div>
+              <Link
+                href="/admin/settings/messages"
+                className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-[#16a34a] px-5 py-2.5 text-sm font-bold text-white shadow transition hover:bg-[#15803d] dark:bg-emerald-600 dark:hover:bg-emerald-500"
+              >
+                <BookTemplate className="h-4 w-4" />
+                לעורך תבניות
+              </Link>
+            </div>
           </div>
         </div>
       </div>

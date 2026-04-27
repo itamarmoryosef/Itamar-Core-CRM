@@ -22,6 +22,7 @@ import {
   Users,
   X,
 } from "lucide-react";
+import { SettingsHubGrid } from "@/components/admin/SettingsHubGrid";
 import {
   ResponsiveDataTable,
   type ResponsiveColumnDef,
@@ -240,11 +241,12 @@ export default function AdminSettingsPage() {
     label: string;
   }[] => {
     const u: { href: string; label: string }[] = [
+      { href: "/admin/settings/messages", label: "תבניות הודעות" },
+      { href: "/admin/settings/whatsapp", label: "חיבור WhatsApp" },
       { href: "/admin/settings/statuses", label: "ניהול סטטוסים" },
       { href: "/admin/settings/fields", label: "שדות מותאמים" },
       { href: "/admin/settings/layout", label: "פריסת כרטיס" },
       { href: "/admin/settings/templates", label: "עורך טפסי פורטל" },
-      { href: "/admin/settings/whatsapp", label: "חיבור WhatsApp" },
     ];
     return u;
   }, []);
@@ -1216,7 +1218,7 @@ export default function AdminSettingsPage() {
           </div>
         ) : null}
 
-        <header className="border-b border-slate-200/80 pb-5">
+        <header className="border-b border-slate-200/80 pb-4">
           <p className="text-start text-xs font-medium uppercase tracking-wide text-slate-500">
             ניהול
           </p>
@@ -1224,32 +1226,47 @@ export default function AdminSettingsPage() {
             הגדרות מערכת
           </h1>
           <p className="mt-1.5 text-start text-sm text-slate-600">
-            שורת קישורים: דפי עריכה נפרדים. למטה: כל שאר ההגדרות (לשוניות) — בלי
-            אותו פריט בשני מקומות.
+            בחירה מהקנבס למטה — או שימוש בלשוניות (מיתוג, התראות, מסמכים וכו׳).
+            דפי עריכה (סטטוסים, שדות, הודעות) פתוחים בכרטיסים.
           </p>
         </header>
 
-        <nav
-          className="flex flex-wrap items-center gap-x-1 gap-y-1 rounded-lg border border-slate-200/60 bg-slate-50/50 px-2 py-2 text-sm"
-          aria-label="דפי עריכה"
+        <section
+          className="rounded-2xl border border-slate-200/80 bg-slate-50/40 p-4 shadow-sm sm:p-6 dark:border-zinc-800 dark:bg-zinc-900/20"
+          aria-label="בחירת מודולים"
         >
-          {settingsSubpageLinks.map((item, i) => (
-            <span key={item.href} className="inline-flex items-center">
-              {i > 0 ? (
-                <span
-                  className="mx-1.5 text-slate-300"
-                  aria-hidden
-                >
-                  |
-                </span>
-              ) : null}
-              <Link
-                href={item.href}
-                className="font-medium text-brand hover:underline"
-              >
-                {item.label}
-              </Link>
-            </span>
+          <div className="mb-4 text-start">
+            <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">
+              מרכז הגדרות
+            </h2>
+            <p className="mt-0.5 text-sm text-slate-600 dark:text-slate-400">
+              אותו סגנון כרטיס־רשת כמו «יועצים CRM» — הכל במקום אחד מסודר.
+            </p>
+          </div>
+          <SettingsHubGrid
+            enabledFeatureCodes={enabledFeatureCodes}
+            onPickRubric={(k) => {
+              setActiveRubric(k);
+              if (typeof window !== "undefined") {
+                window.location.hash = k;
+              }
+            }}
+          />
+        </section>
+
+        <nav
+          className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-xs"
+          aria-label="קישורי שורה מהירים"
+        >
+          <span className="font-medium text-slate-500">קישורי שורה:</span>
+          {settingsSubpageLinks.map((item) => (
+            <Link
+              key={item.href}
+              href={item.href}
+              className="font-medium text-brand/90 underline-offset-2 hover:underline"
+            >
+              {item.label}
+            </Link>
           ))}
         </nav>
 
@@ -1259,11 +1276,11 @@ export default function AdminSettingsPage() {
               id="settings-rubrics-heading"
               className="text-start text-sm font-semibold text-slate-800"
             >
-              הגדרות (באותו דף)
+              לשוניות מפורטות (אותו דף)
             </h2>
             <p className="text-start text-xs text-slate-500">
-              מיתוג, התראות, תזכורות, ספקי לידים, סוגי מסמכים, Word,
-              וניהול/עריכת צוות. יצירת משתמש חדש: קישור בתוך «ניהול צוות».
+              בחרו לשונית להמשך — מיתוג, התראות, תזכורות, ספקי לידים, סוגי
+              מסמכים, Word, צוות. יצירת משתמש: בתוך «ניהול צוות».
             </p>
           </div>
         <div className="rounded-2xl border border-slate-200/80 bg-white p-3 shadow-sm">

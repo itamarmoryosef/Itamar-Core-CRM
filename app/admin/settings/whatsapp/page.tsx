@@ -11,7 +11,7 @@ export default function AdminWhatsAppSettingsPage() {
       className="min-h-screen bg-slate-50 p-4 text-slate-900 dark:bg-zinc-950 dark:text-zinc-100 sm:p-6"
       dir="rtl"
     >
-      <div className="mx-auto max-w-3xl space-y-6">
+      <div className="mx-auto max-w-5xl space-y-6">
         <div>
           <Link
             href="/admin/settings"

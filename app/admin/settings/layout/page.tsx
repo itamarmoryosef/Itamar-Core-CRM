@@ -115,12 +115,30 @@ function BuilderChipShell({ children }: { children: React.ReactNode }) {
   );
 }
 
-const canvasShellClass =
-  "min-h-[70vh] space-y-6 rounded-xl bg-slate-50 py-4 dark:bg-neutral-950/50";
+const CANVAS_FIELD_FRAME =
+  "relative overflow-hidden rounded-md border border-sky-200/90 bg-sky-100/95 shadow-sm dark:border-sky-800/50 dark:bg-sky-950/30";
 
-/** 12-col canvas row: subtle dashed grid (no instructional copy). */
+const CANVAS_FIELD_ACCENT =
+  "pointer-events-none absolute end-0 top-0 bottom-0 z-[1] w-[3px] bg-sky-500/95";
+
+function CanvasFieldShell({ children }: { children: React.ReactNode }) {
+  return (
+    <div className={CANVAS_FIELD_FRAME}>
+      <span className={CANVAS_FIELD_ACCENT} aria-hidden />
+      <div className={BUILDER_CHIP_INNER}>{children}</div>
+    </div>
+  );
+}
+
+const canvasShellClass =
+  "min-h-[min(64vh,52rem)] space-y-5 rounded-2xl border border-slate-200/60 bg-slate-100/90 px-3 py-4 shadow-inner dark:border-slate-800/50 dark:bg-neutral-950/40 sm:px-4";
+
+/** 12-col row: full-width “slot band” (Consultants-style grid on canvas). */
 const canvasRowGridClass =
-  "grid min-h-10 grid-cols-12 gap-1 rounded-lg border border-dashed border-slate-200/90 bg-slate-50/80 p-1.5 dark:border-slate-600/70 dark:bg-slate-900/30";
+  "grid min-h-[2.75rem] grid-cols-12 gap-1.5 rounded-lg border border-slate-200/80 bg-white/95 p-2 shadow-sm dark:border-slate-600/50 dark:bg-slate-900/25";
+
+const builderAddBarBtnClass =
+  "inline-flex items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-3.5 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-emerald-700 disabled:pointer-events-none disabled:opacity-45";
 
 function rowSortId(sectionId: string, rowNum: number) {
   return `row-sort|${sectionId}|${rowNum}`;
@@ -368,12 +386,12 @@ function CanvasCustomFieldChipInner(props: {
 }) {
   const { field, slot, busy, onRemoveFromLayout, onCycleSpan } = props;
   return (
-    <BuilderChipShell>
+    <CanvasFieldShell>
       <Link
         href="/admin/settings/fields"
         onClick={(e) => e.stopPropagation()}
         onPointerDown={(e) => e.stopPropagation()}
-        className="min-w-0 flex-1 truncate text-start text-xs font-medium text-slate-800 hover:underline dark:text-slate-100"
+        className="min-w-0 flex-1 truncate text-start text-xs font-medium text-sky-950 hover:underline dark:text-sky-100"
         title="עריכת הגדרות שדה במסך «שדות»"
       >
         {field.label?.trim() ? field.label : "שדה"}
@@ -401,7 +419,7 @@ function CanvasCustomFieldChipInner(props: {
       >
         <X className="h-3 w-3" strokeWidth={2.5} />
       </button>
-    </BuilderChipShell>
+    </CanvasFieldShell>
   );
 }
 
@@ -416,8 +434,8 @@ const CoreFieldCanvasChip = memo(function CoreFieldCanvasChipInner(props: {
 }) {
   const { coreKey, busy, columnSpan, onCycleSpan, onRemove } = props;
   return (
-    <BuilderChipShell>
-      <div className="min-w-0 flex-1 truncate text-start text-xs font-medium text-slate-800 dark:text-slate-100">
+    <CanvasFieldShell>
+      <div className="min-w-0 flex-1 truncate text-start text-xs font-medium text-sky-950 dark:text-sky-100">
         {labelForCoreKey(coreKey)}
       </div>
       <button
@@ -443,12 +461,12 @@ const CoreFieldCanvasChip = memo(function CoreFieldCanvasChipInner(props: {
       >
         <X className="h-3 w-3" strokeWidth={2.5} />
       </button>
-    </BuilderChipShell>
+    </CanvasFieldShell>
   );
 });
 
 const overlayLiftClass =
-  "cursor-grabbing shadow-xl ring-2 ring-indigo-400/50 dark:ring-indigo-500/40";
+  "cursor-grabbing shadow-xl ring-2 ring-sky-400/55 dark:ring-sky-500/45";
 
 function LayoutDragOverlayContent({
   activeId,
@@ -464,12 +482,12 @@ function LayoutDragOverlayContent({
     const coreKey = activeId.slice("pal-core:".length) as CrmCoreFieldKey;
     return (
       <div className={overlayLiftClass}>
-        <BuilderChipShell>
-          <GripVertical className="h-3 w-3 shrink-0 text-slate-400" />
-          <div className="min-w-0 flex-1 truncate text-xs font-medium text-slate-800 dark:text-slate-100">
+        <CanvasFieldShell>
+          <GripVertical className="h-3 w-3 shrink-0 text-sky-600" />
+          <div className="min-w-0 flex-1 truncate text-xs font-medium text-sky-950 dark:text-sky-100">
             {labelForCoreKey(coreKey)}
           </div>
-        </BuilderChipShell>
+        </CanvasFieldShell>
       </div>
     );
   }
@@ -479,12 +497,12 @@ function LayoutDragOverlayContent({
     if (!f) return null;
     return (
       <div className={overlayLiftClass}>
-        <BuilderChipShell>
-          <GripVertical className="h-3 w-3 shrink-0 text-slate-400" />
-          <div className="min-w-0 flex-1 truncate text-xs font-medium text-slate-800 dark:text-slate-100">
+        <CanvasFieldShell>
+          <GripVertical className="h-3 w-3 shrink-0 text-sky-600" />
+          <div className="min-w-0 flex-1 truncate text-xs font-medium text-sky-950 dark:text-sky-100">
             {f.label?.trim() ? f.label : "שדה"}
           </div>
-        </BuilderChipShell>
+        </CanvasFieldShell>
       </div>
     );
   }
@@ -495,12 +513,12 @@ function LayoutDragOverlayContent({
     const ck = sl.core_key as CrmCoreFieldKey;
     return (
       <div className={overlayLiftClass}>
-        <BuilderChipShell>
-          <GripVertical className="h-3 w-3 shrink-0 text-slate-400" />
-          <div className="min-w-0 flex-1 truncate text-xs font-medium text-slate-800 dark:text-slate-100">
+        <CanvasFieldShell>
+          <GripVertical className="h-3 w-3 shrink-0 text-sky-600" />
+          <div className="min-w-0 flex-1 truncate text-xs font-medium text-sky-950 dark:text-sky-100">
             {labelForCoreKey(ck)}
           </div>
-        </BuilderChipShell>
+        </CanvasFieldShell>
       </div>
     );
   }
@@ -523,12 +541,12 @@ function LayoutDragOverlayContent({
   if (!f) return null;
   return (
     <div className={overlayLiftClass}>
-      <BuilderChipShell>
-        <GripVertical className="h-3 w-3 shrink-0 text-slate-400" />
-        <div className="min-w-0 flex-1 truncate text-xs font-medium text-slate-800 dark:text-slate-100">
+      <CanvasFieldShell>
+        <GripVertical className="h-3 w-3 shrink-0 text-sky-600" />
+        <div className="min-w-0 flex-1 truncate text-xs font-medium text-sky-950 dark:text-sky-100">
           {f.label?.trim() ? f.label : "שדה"}
         </div>
-      </BuilderChipShell>
+      </CanvasFieldShell>
     </div>
   );
 }
@@ -546,7 +564,7 @@ function RowDropZone({
       ref={setNodeRef}
       className={`${canvasRowGridClass} transition-[background-color,box-shadow,ring-color] duration-150 ${
         isOver
-          ? "bg-indigo-50/95 ring-2 ring-indigo-400/55 shadow-[inset_0_0_0_1px_rgba(99,102,241,0.12)] dark:bg-indigo-950/35 dark:ring-indigo-500/40"
+          ? "bg-sky-50/95 ring-2 ring-sky-300/60 shadow-[inset_0_0_0_1px_rgba(14,165,233,0.12)] dark:bg-sky-950/30 dark:ring-sky-500/45"
           : ""
       }`}
     >
@@ -646,12 +664,10 @@ function DraggablePaletteCoreChip({
       {...attributes}
       className={`touch-none ${isDragging ? "opacity-55" : ""} cursor-grab active:cursor-grabbing`}
     >
-      <BuilderChipShell>
-        <GripVertical className="h-3 w-3 shrink-0 text-slate-400" />
-        <div className="min-w-0 flex-1 truncate text-xs font-medium text-slate-800 dark:text-slate-100">
-          {labelForCoreKey(coreKey)}
-        </div>
-      </BuilderChipShell>
+      <div className="flex min-h-9 min-w-[6.75rem] max-w-[11rem] items-center gap-1.5 rounded-lg border border-sky-800/20 bg-sky-600 px-2.5 py-1.5 text-start text-xs font-medium text-white shadow-sm hover:bg-sky-700">
+        <GripVertical className="h-3.5 w-3.5 shrink-0 text-white/85" />
+        <span className="min-w-0 flex-1 truncate">{labelForCoreKey(coreKey)}</span>
+      </div>
     </div>
   );
 }
@@ -675,12 +691,12 @@ function DraggablePaletteDefChip({
       {...attributes}
       className={`touch-none ${isDragging ? "opacity-55" : ""} cursor-grab active:cursor-grabbing`}
     >
-      <BuilderChipShell>
-        <GripVertical className="h-3 w-3 shrink-0 text-slate-400" />
-        <div className="min-w-0 flex-1 truncate text-xs font-medium text-slate-800 dark:text-slate-100">
+      <div className="flex min-h-9 min-w-[6.75rem] max-w-[11rem] items-center gap-1.5 rounded-lg border border-sky-800/20 bg-sky-600 px-2.5 py-1.5 text-start text-xs font-medium text-white shadow-sm hover:bg-sky-700">
+        <GripVertical className="h-3.5 w-3.5 shrink-0 text-white/85" />
+        <span className="min-w-0 flex-1 truncate">
           {field.label?.trim() ? field.label : "שדה"}
-        </div>
-      </BuilderChipShell>
+        </span>
+      </div>
     </div>
   );
 }
@@ -1645,11 +1661,11 @@ export default function AdminCrmLayoutBuilderPage() {
                             )}
                           >
                             <div className="pointer-events-none opacity-95">
-                              <BuilderChipShell>
-                                <div className="min-w-0 flex-1 truncate text-xs font-medium text-slate-800 dark:text-slate-100">
+                              <CanvasFieldShell>
+                                <div className="min-w-0 flex-1 truncate text-xs font-medium text-sky-950 dark:text-sky-100">
                                   {labelForCoreKey(sl.core_key)}
                                 </div>
-                              </BuilderChipShell>
+                              </CanvasFieldShell>
                             </div>
                           </div>
                         );
@@ -1676,11 +1692,11 @@ export default function AdminCrmLayoutBuilderPage() {
                           )}
                         >
                           <div className="pointer-events-none opacity-95">
-                            <BuilderChipShell>
-                              <div className="min-w-0 flex-1 truncate text-xs font-medium text-slate-800 dark:text-slate-100">
+                            <CanvasFieldShell>
+                              <div className="min-w-0 flex-1 truncate text-xs font-medium text-sky-950 dark:text-sky-100">
                                 {f.label?.trim() ? f.label : "שדה"}
                               </div>
-                            </BuilderChipShell>
+                            </CanvasFieldShell>
                           </div>
                         </div>
                       );
@@ -1701,35 +1717,8 @@ export default function AdminCrmLayoutBuilderPage() {
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
     >
-      <div className="min-h-0" dir="rtl">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:gap-5">
-        <aside
-          aria-label="רכיבים לגרירה"
-          className="hidden w-full max-h-[40vh] shrink-0 flex-col overflow-y-auto rounded-xl border border-slate-200 bg-slate-50/95 p-2 shadow-sm dark:border-slate-800 dark:bg-slate-950/80 lg:sticky lg:top-16 lg:order-1 lg:flex lg:max-h-[min(72vh,calc(100dvh-6rem))] lg:w-52"
-        >
-          <div className="space-y-1">
-            {CRM_CORE_FIELD_KEYS.map((key) => (
-              <DraggablePaletteCoreChip
-                key={key}
-                coreKey={key}
-                disabled={busy}
-              />
-            ))}
-          </div>
-          {unassigned.length > 0 ? (
-            <div className="mt-2 space-y-1 border-t border-slate-200/80 pt-2 dark:border-slate-800">
-              {unassigned.map((f) => (
-                <DraggablePaletteDefChip
-                  key={f.id}
-                  field={f}
-                  disabled={busy}
-                />
-              ))}
-            </div>
-          ) : null}
-        </aside>
-
-      <div className="min-w-0 flex-1 space-y-4 py-0 lg:order-2">
+      <div className="min-h-0 flex flex-col" dir="rtl">
+        <div className="min-w-0 flex-1 space-y-4">
         {toast ? (
           <div
             role="status"
@@ -1753,14 +1742,14 @@ export default function AdminCrmLayoutBuilderPage() {
               פריסת כרטיס
             </h1>
             <p className="mt-1 text-start text-[11px] text-slate-500">
-              הוספה או שינוי סוג/תווית/מזהה:{" "}
+              הוספה או שינוי מטא-שדה:{" "}
               <Link
                 href="/admin/settings/fields"
                 className="font-medium text-brand hover:underline"
               >
                 שדות
               </Link>
-              . כאן: גרירה, שורות, רוחב.
+              . בלמטה: ספריית גרירה, מודולים ומפריד.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2 sm:gap-3">
@@ -1788,17 +1777,6 @@ export default function AdminCrmLayoutBuilderPage() {
             </button>
             <button
               type="button"
-              disabled={
-                loading || busy || slotsTableMissing || sortedSections.length === 0
-              }
-              onClick={() => void addDividerToToolbarTarget()}
-              className={`${minimalistBtnClass} disabled:opacity-50`}
-            >
-              <Minus className="h-4 w-4" aria-hidden />
-              הוסף מפריד
-            </button>
-            <button
-              type="button"
               disabled={loading || busy}
               onClick={() => void loadAll()}
               className={`${minimalistBtnClass} disabled:opacity-50`}
@@ -1823,6 +1801,7 @@ export default function AdminCrmLayoutBuilderPage() {
             {error}
           </p>
         ) : (
+          <>
           <div
             className={
               previewOpen ? "grid gap-4 lg:grid-cols-2 lg:items-start" : ""
@@ -1831,6 +1810,7 @@ export default function AdminCrmLayoutBuilderPage() {
             <div className={canvasShellClass}>
               <div className="flex flex-wrap items-center gap-2">
                 <input
+                  id="layout-new-section-title"
                   value={newSectionTitle}
                   onChange={(e) => setNewSectionTitle(e.target.value)}
                   className="h-9 min-w-[10rem] flex-1 rounded-md border border-slate-200 bg-white px-2 text-xs text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
@@ -2113,113 +2093,6 @@ export default function AdminCrmLayoutBuilderPage() {
                 );
               })}
               </div>
-
-              {unassigned.length > 0 ? (
-                <section className="space-y-2 border-t border-slate-200/60 pt-4 dark:border-slate-800">
-                  <div className="flex flex-wrap gap-1">
-                    {unassigned.map((f) => (
-                      <button
-                        key={f.id}
-                        type="button"
-                        onClick={() => {
-                          const sid = sortedSections[0]?.id ?? "";
-                          setAssignFieldId(f.id);
-                          setAssignSectionId(sid);
-                          if (sid) {
-                            const nums = getRowNumbersToDisplay(sid);
-                            const pend = pendingRowBySection[sid];
-                            if (pend != null && nums.includes(pend)) {
-                              setAssignRowChoice(String(pend));
-                            } else if (nums.length > 0) {
-                              setAssignRowChoice(
-                                String(nums[nums.length - 1])
-                              );
-                            } else {
-                              setAssignRowChoice("__new__");
-                            }
-                          }
-                        }}
-                        className="max-w-[11rem] cursor-pointer border-0 bg-transparent p-0 text-start shadow-none ring-0"
-                      >
-                        <BuilderChipShell>
-                          <span className="min-w-0 flex-1 truncate text-xs font-medium text-slate-800 dark:text-slate-100">
-                            {f.label?.trim() ? f.label : "שדה"}
-                          </span>
-                        </BuilderChipShell>
-                      </button>
-                    ))}
-                  </div>
-
-                  {assignFieldId ? (
-                    <div className="flex flex-wrap items-center gap-2 rounded-md border border-slate-200 bg-white p-2 dark:border-slate-700 dark:bg-slate-900">
-                      <select
-                        value={assignSectionId}
-                        onChange={(e) => {
-                          const sid = e.target.value;
-                          setAssignSectionId(sid);
-                          if (!sid) return;
-                          const nums = getRowNumbersToDisplay(sid);
-                          const pend = pendingRowBySection[sid];
-                          if (pend != null && nums.includes(pend)) {
-                            setAssignRowChoice(String(pend));
-                          } else if (nums.length > 0) {
-                            setAssignRowChoice(
-                              String(nums[nums.length - 1] ?? nums[0])
-                            );
-                          } else {
-                            setAssignRowChoice("__new__");
-                          }
-                        }}
-                        className="h-8 rounded-md border border-slate-200 bg-white px-2 text-xs dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100"
-                      >
-                        <option value="">—</option>
-                        {sortedSections.map((s) => (
-                          <option key={s.id} value={s.id}>
-                            {s.title}
-                          </option>
-                        ))}
-                      </select>
-                      <select
-                        value={assignRowChoice}
-                        onChange={(e) =>
-                          setAssignRowChoice(e.target.value)
-                        }
-                        disabled={!assignSectionId}
-                        className="h-8 min-w-[4rem] rounded-md border border-slate-200 bg-white px-2 text-xs dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100"
-                      >
-                        {assignSectionId
-                          ? getRowNumbersToDisplay(assignSectionId).map(
-                              (rn) => (
-                                <option key={rn} value={String(rn)}>
-                                  {rn}
-                                </option>
-                              )
-                            )
-                          : null}
-                        <option value="__new__">+</option>
-                      </select>
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() => void confirmAssign()}
-                        className={`${minimalistPrimaryClass} h-8 px-3 text-xs`}
-                      >
-                        OK
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setAssignFieldId(null);
-                          setAssignRowChoice("__new__");
-                        }}
-                        className="h-8 rounded-md border border-slate-200 px-2 text-xs dark:border-slate-600"
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  ) : null}
-                </section>
-              ) : null}
             </div>
 
             {previewOpen ? (
@@ -2232,9 +2105,178 @@ export default function AdminCrmLayoutBuilderPage() {
               </aside>
             ) : null}
           </div>
+
+          <div
+            className="mt-1 shrink-0 rounded-2xl border border-slate-200/80 bg-slate-50/95 px-3 py-3 shadow-sm dark:border-slate-800 dark:bg-slate-950/50"
+            aria-label="ספריית רכיבים ופעולות"
+          >
+            <p className="text-start text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+              ספריית שדות — גררו לרשת
+            </p>
+            <div className="mt-2 flex max-h-[9.5rem] flex-wrap content-start gap-2 overflow-y-auto">
+              {CRM_CORE_FIELD_KEYS.map((key) => (
+                <DraggablePaletteCoreChip
+                  key={key}
+                  coreKey={key}
+                  disabled={busy}
+                />
+              ))}
+              {unassigned.map((f) => (
+                <DraggablePaletteDefChip
+                  key={f.id}
+                  field={f}
+                  disabled={busy}
+                />
+              ))}
+            </div>
+            {unassigned.length > 0 ? (
+              <section className="mt-3 space-y-2 border-t border-slate-200/60 pt-3 dark:border-slate-800">
+                <p className="text-start text-[10px] text-slate-500">
+                  שיוך מהיר (בלי גרירה)
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {unassigned.map((f) => (
+                    <button
+                      key={`pick-${f.id}`}
+                      type="button"
+                      onClick={() => {
+                        const sid = sortedSections[0]?.id ?? "";
+                        setAssignFieldId(f.id);
+                        setAssignSectionId(sid);
+                        if (sid) {
+                          const nums = getRowNumbersToDisplay(sid);
+                          const pend = pendingRowBySection[sid];
+                          if (pend != null && nums.includes(pend)) {
+                            setAssignRowChoice(String(pend));
+                          } else if (nums.length > 0) {
+                            setAssignRowChoice(
+                              String(nums[nums.length - 1])
+                            );
+                          } else {
+                            setAssignRowChoice("__new__");
+                          }
+                        }
+                      }}
+                      className="max-w-[12rem] cursor-pointer rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-start text-xs text-slate-800 shadow-sm hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+                    >
+                      <span className="line-clamp-1 font-medium">
+                        {f.label?.trim() ? f.label : "שדה"}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+                {assignFieldId ? (
+                  <div className="flex flex-wrap items-center gap-2 rounded-md border border-slate-200 bg-white p-2 dark:border-slate-700 dark:bg-slate-900">
+                    <select
+                      value={assignSectionId}
+                      onChange={(e) => {
+                        const sid = e.target.value;
+                        setAssignSectionId(sid);
+                        if (!sid) return;
+                        const nums = getRowNumbersToDisplay(sid);
+                        const pend = pendingRowBySection[sid];
+                        if (pend != null && nums.includes(pend)) {
+                          setAssignRowChoice(String(pend));
+                        } else if (nums.length > 0) {
+                          setAssignRowChoice(
+                            String(nums[nums.length - 1] ?? nums[0])
+                          );
+                        } else {
+                          setAssignRowChoice("__new__");
+                        }
+                      }}
+                      className="h-8 rounded-md border border-slate-200 bg-white px-2 text-xs dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100"
+                    >
+                      <option value="">—</option>
+                      {sortedSections.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.title}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      value={assignRowChoice}
+                      onChange={(e) => setAssignRowChoice(e.target.value)}
+                      disabled={!assignSectionId}
+                      className="h-8 min-w-[4rem] rounded-md border border-slate-200 bg-white px-2 text-xs dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100"
+                    >
+                      {assignSectionId
+                        ? getRowNumbersToDisplay(assignSectionId).map(
+                            (rn) => (
+                              <option key={rn} value={String(rn)}>
+                                {rn}
+                              </option>
+                            )
+                          )
+                        : null}
+                      <option value="__new__">+</option>
+                    </select>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void confirmAssign()}
+                      className={`${minimalistPrimaryClass} h-8 px-3 text-xs`}
+                    >
+                      OK
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAssignFieldId(null);
+                        setAssignRowChoice("__new__");
+                      }}
+                      className="h-8 rounded-md border border-slate-200 px-2 text-xs dark:border-slate-600"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ) : null}
+              </section>
+            ) : null}
+            <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-200/70 pt-3 dark:border-slate-700">
+              <button
+                type="button"
+                className={builderAddBarBtnClass}
+                onClick={() => {
+                  const el = document.getElementById(
+                    "layout-new-section-title"
+                  );
+                  el?.scrollIntoView({
+                    behavior: "smooth",
+                    block: "center",
+                  });
+                  window.setTimeout(() => {
+                    el?.focus();
+                  }, 250);
+                }}
+                disabled={loading || busy}
+              >
+                <Plus className="h-4 w-4" />
+                מודול חדש
+              </button>
+              <button
+                type="button"
+                disabled={
+                  loading ||
+                  busy ||
+                  slotsTableMissing ||
+                  sortedSections.length === 0
+                }
+                onClick={() => void addDividerToToolbarTarget()}
+                className={builderAddBarBtnClass}
+              >
+                <Minus className="h-4 w-4" />
+                מפריד
+              </button>
+            </div>
+            <p className="mt-2 text-start text-[10px] leading-relaxed text-slate-500">
+              אחרי «שמור שינויים» הפריסה מוטמעת בכרטיסי הלקוחות ובפורטל; אין צורך
+              בקוד הטמעה ידני.
+            </p>
+          </div>
+          </>
         )}
       </div>
-        </div>
 
       {dividerModalSlotId ? (
         <DividerConfigModal
